@@ -21,7 +21,7 @@
                 <h3>مساعد ألكساندرز</h3>
                 <div class="ai-chat-status">
                   <span class="ai-chat-status-dot"></span>
-                  <span id="aiChatStatusText">متصل (سريع وآمن)</span>
+                  <span id="aiChatStatusText">متصل</span>
                 </div>
               </div>
             </div>
@@ -55,9 +55,6 @@
                 </svg>
               </button>
             </form>
-            <div class="ai-chat-footer-note">
-              <span id="aiChatLatencyBadge">⚡ متصل بالخادم السحابي</span>
-            </div>
           </div>
         </div>
 
@@ -154,32 +151,16 @@
 
         const data = await res.json();
         const replyText = data.reply?.trim() || "عذرًا، لم أتمكن من الحصول على رد.";
-        const modelTag = data.model || "gemini";
 
-        assistantMsgElem.querySelector(".ai-message-content").innerHTML = `
-          ${escapeHtml(replyText)}
-          <div class="ai-rtt-tag" style="margin-top:6px; font-size:0.75rem; color:var(--text-muted); opacity:0.8; font-family:monospace; direction:ltr; text-align:left;">
-            ⏱️ ${rttMs}ms • ${modelTag}
-          </div>
-        `;
-
-        if (latencyBadge) {
-          latencyBadge.textContent = `⚡ الاستجابة: ${rttMs}ms`;
-        }
+        assistantMsgElem.querySelector(".ai-message-content").innerHTML = escapeHtml(replyText);
 
         chatHistory.push({ role: "user", text: userText });
         chatHistory.push({ role: "assistant", text: replyText });
       } catch (err) {
         clearTimeout(timeoutId);
-        const rttMs = Math.round(performance.now() - startTime);
-        const msg = err.name === "AbortError" ? "انتهت مهلة الانتظار." : err.message;
+        const msg = err.name === "AbortError" ? "انتهت مهلة الانتظار. يرجى المحاولة مرة أخرى." : err.message;
 
-        assistantMsgElem.querySelector(".ai-message-content").innerHTML = `
-          <span style="color:#ef4444;">⚠️ خطأ: ${escapeHtml(msg)}</span>
-          <div style="margin-top:4px; font-size:0.72rem; color:var(--text-muted); direction:ltr;">⏱️ ${rttMs}ms</div>
-        `;
-
-        if (latencyBadge) latencyBadge.textContent = `❌ فشل (${rttMs}ms)`;
+        assistantMsgElem.querySelector(".ai-message-content").innerHTML = `<span style="color:#ef4444;">⚠️ ${escapeHtml(msg)}</span>`;
       } finally {
         input.disabled = false;
         if (sendBtn) sendBtn.disabled = false;

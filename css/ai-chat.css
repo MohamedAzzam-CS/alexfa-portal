@@ -249,10 +249,10 @@
 }
 
 .ai-message-content {
-  padding: 11px 15px;
+  padding: 10px 14px;
   font-size: 0.92rem;
-  line-height: 1.65;
-  border-radius: 16px;
+  line-height: 1.6;
+  border-radius: 14px;
   word-break: break-word;
   white-space: pre-wrap;
 }
@@ -261,7 +261,7 @@
   background: var(--accent-gradient, linear-gradient(135deg, #3b82f6, #38bdf8));
   color: #ffffff;
   border-bottom-right-radius: 4px;
-  box-shadow: 0 4px 14px rgba(56, 189, 248, 0.25);
+  box-shadow: 0 4px 14px rgba(56, 189, 248, 0.2);
 }
 
 .ai-message.assistant .ai-message-content {
@@ -356,9 +356,6 @@
   padding: 12px 14px;
   background: rgba(255, 255, 255, 0.02);
   border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
 }
 
 .ai-chat-input-wrapper {
@@ -431,17 +428,7 @@
   transform: rotate(180deg); /* points inward for RTL */
 }
 
-/* Chat Footer / Badge Note */
-.ai-chat-footer-note {
-  font-size: 0.68rem;
-  color: var(--text-muted, #64748b);
-  text-align: center;
-  margin-top: 2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-}
+
 
 /* Mobile responsive adjustments */
 @media (max-width: 480px) {
