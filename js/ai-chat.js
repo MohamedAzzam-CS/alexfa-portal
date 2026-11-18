@@ -1,50 +1,14 @@
 // ==============================================================================
-// Alexanders AI Assistant - High-Speed Client (Gemini 3.1 Flash Lite)
+// Alexanders AI Assistant - Clean Client connected to Cloudflare Worker
 // ==============================================================================
-(function() {
-  const KNOWLEDGE_BASE_PATH = "data/knowledge.txt";
-  // gemini-3.1-flash-lite is the proven ultra-fast production model (~700ms - 1.2s RTT)
-  const PRIMARY_MODEL = "gemini-3.1-flash-lite";
-  const TIMEOUT_MS = 10000;
-  let cachedSystemInstruction = null;
+(function () {
+  const CHAT_API_ENDPOINT = "https://alexanders-ai-api.sci-mohamedelsayed32561.workers.dev/";
+  const TIMEOUT_MS = 12000;
   let chatHistory = [];
-
-  function getApiKey() {
-    let key = localStorage.getItem("alexanders_gemini_key");
-    if (!key) {
-      key = prompt("🔑 Smoke Test Mode:\nمن فضلك أدخل مفتاح Gemini API Key لتجربة الشات بوت وسرعة الاستجابة:");
-      if (key && key.trim()) {
-        key = key.trim();
-        localStorage.setItem("alexanders_gemini_key", key);
-      }
-    }
-    return key;
-  }
-
-  async function loadKnowledgeBase() {
-    if (cachedSystemInstruction) return cachedSystemInstruction;
-    // 1. First check if loaded via window.ALEXANDERS_KNOWLEDGE (works universally with 0ms lag)
-    if (window.ALEXANDERS_KNOWLEDGE && window.ALEXANDERS_KNOWLEDGE.length > 50) {
-      cachedSystemInstruction = window.ALEXANDERS_KNOWLEDGE;
-      console.log("[Chatbot] Using verified local knowledge base (" + cachedSystemInstruction.length + " bytes)");
-      return cachedSystemInstruction;
-    }
-    // 2. Fallback to fetch from data/knowledge.txt if served over HTTP/HTTPS
-    try {
-      const res = await fetch(KNOWLEDGE_BASE_PATH);
-      if (res.ok) {
-        cachedSystemInstruction = await res.text();
-        console.log("[Chatbot] Loaded knowledge from fetch (" + cachedSystemInstruction.length + " bytes)");
-        return cachedSystemInstruction;
-      }
-    } catch (e) {
-      console.warn("[Chatbot] Fetch error (expected on file:// protocol):", e);
-    }
-    return cachedSystemInstruction || "أنت مساعد مجتمع ألكساندرز. أجب باختصار وسرعة وبلهجة مصرية مهذبة.";
-  }
 
   function injectChatWidgetDOM() {
     if (document.getElementById("aiChatWidget")) return;
+
     const widgetHTML = `
       <div id="aiChatWidget" class="ai-chat-widget">
         <!-- Chat Panel -->
@@ -57,16 +21,16 @@
                 <h3>مساعد ألكساندرز</h3>
                 <div class="ai-chat-status">
                   <span class="ai-chat-status-dot"></span>
-                  <span id="aiChatStatusText">متصل (فائق السرعة)</span>
+                  <span id="aiChatStatusText">متصل (سريع وآمن)</span>
                 </div>
               </div>
             </div>
             <div class="ai-chat-header-actions">
-              <button id="aiChatKeyBtn" class="ai-chat-btn-action" title="تغيير مفتاح API">
-                <span>🔑 مفتاح</span>
-              </button>
               <button id="aiChatResetBtn" class="ai-chat-btn-action" title="إعادة تعيين المحادثة">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="1 4 1 10 7 10"></polyline>
+                  <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                </svg>
                 <span>إعادة ضبط</span>
               </button>
               <button id="aiChatCloseBtn" class="ai-chat-btn-close" aria-label="إغلاق">✕</button>
@@ -92,7 +56,7 @@
               </button>
             </form>
             <div class="ai-chat-footer-note">
-              <span id="aiChatLatencyBadge">⚡ جاهز للاختبار (${PRIMARY_MODEL})</span>
+              <span id="aiChatLatencyBadge">⚡ متصل بالخادم السحابي</span>
             </div>
           </div>
         </div>
@@ -106,6 +70,7 @@
         </button>
       </div>
     `;
+
     document.body.insertAdjacentHTML("beforeend", widgetHTML);
     bindChatEvents();
   }
@@ -114,7 +79,6 @@
     const toggleBtn = document.getElementById("aiChatToggleBtn");
     const closeBtn = document.getElementById("aiChatCloseBtn");
     const resetBtn = document.getElementById("aiChatResetBtn");
-    const keyBtn = document.getElementById("aiChatKeyBtn");
     const form = document.getElementById("aiChatForm");
     const input = document.getElementById("aiChatInput");
     const sendBtn = document.getElementById("aiChatSendBtn");
@@ -131,41 +95,27 @@
 
     toggleBtn?.addEventListener("click", () => setOpen(!widget?.classList.contains("active")));
     closeBtn?.addEventListener("click", () => setOpen(false));
-    document.addEventListener("keydown", e => {
-      if (e.key === "Escape") setOpen(false);
-    });
 
-    keyBtn?.addEventListener("click", () => {
-      const current = localStorage.getItem("alexanders_gemini_key") || "";
-      const updated = prompt("أدخل مفتاح Gemini API الجديد:", current);
-      if (updated !== null) {
-        if (updated.trim()) {
-          localStorage.setItem("alexanders_gemini_key", updated.trim());
-          alert("تم حفظ المفتاح بنجاح!");
-        } else {
-          localStorage.removeItem("alexanders_gemini_key");
-          alert("تم مسح المفتاح.");
-        }
-      }
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") setOpen(false);
     });
 
     resetBtn?.addEventListener("click", () => {
       chatHistory = [];
-      if (messages) messages.innerHTML = "";
-      appendMessage("assistant", "تمت إعادة ضبط المحادثة. كيف يمكنني مساعدتك؟");
+      if (messages) {
+        messages.innerHTML = `
+          <div class="ai-message assistant">
+            <div class="ai-message-content">تمت إعادة ضبط المحادثة. كيف يمكنني مساعدتك؟</div>
+          </div>
+        `;
+      }
       if (latencyBadge) latencyBadge.textContent = "⚡ تم التعيين";
     });
 
-    form?.addEventListener("submit", async e => {
+    form?.addEventListener("submit", async (e) => {
       e.preventDefault();
       const userText = input?.value?.trim();
       if (!userText) return;
-
-      const apiKey = getApiKey();
-      if (!apiKey) {
-        appendMessage("assistant", "⚠️ يرجى إدخال مفتاح Gemini API Key لتشغيل التجربة.");
-        return;
-      }
 
       appendMessage("user", userText);
       input.value = "";
@@ -174,46 +124,24 @@
 
       const assistantMsgElem = appendMessage("assistant", "...");
       const startTime = performance.now();
-      if (latencyBadge) latencyBadge.textContent = "⏳ جاري الإرسال...";
+      if (latencyBadge) latencyBadge.textContent = "⏳ جاري المعالجة...";
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => {
-        controller.abort("Timeout: تجاوزت الاستجابة 10 ثوانٍ");
+        controller.abort("تجاوزت الاستجابة مهلة الانتظار (12 ثانية).");
       }, TIMEOUT_MS);
 
       try {
-        const systemInstruction = await loadKnowledgeBase();
-        
-        const contents = [];
-        const recentHistory = chatHistory.slice(-4);
-        for (const item of recentHistory) {
-          contents.push({
-            role: item.role === "assistant" ? "model" : "user",
-            parts: [{ text: item.text }]
-          });
-        }
-        contents.push({
-          role: "user",
-          parts: [{ text: userText }]
-        });
-
         const payload = {
-          systemInstruction: {
-            parts: [{ text: systemInstruction }]
-          },
-          contents: contents,
-          generationConfig: {
-            maxOutputTokens: 220
-          }
+          message: userText,
+          history: chatHistory.slice(-4),
         };
 
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${PRIMARY_MODEL}:generateContent?key=${apiKey}`;
-
-        const res = await fetch(endpoint, {
+        const res = await fetch(CHAT_API_ENDPOINT, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
-          signal: controller.signal
+          signal: controller.signal,
         });
 
         clearTimeout(timeoutId);
@@ -221,38 +149,36 @@
 
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error?.message || `HTTP ${res.status}`);
+          throw new Error(errData.error || `HTTP ${res.status}`);
         }
 
         const data = await res.json();
-        const replyText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() 
-          || "عذرًا، لم أتمكن من استخراج رد.";
+        const replyText = data.reply?.trim() || "عذرًا، لم أتمكن من الحصول على رد.";
+        const modelTag = data.model || "gemini";
 
         assistantMsgElem.querySelector(".ai-message-content").innerHTML = `
           ${escapeHtml(replyText)}
           <div class="ai-rtt-tag" style="margin-top:6px; font-size:0.75rem; color:var(--text-muted); opacity:0.8; font-family:monospace; direction:ltr; text-align:left;">
-            ⏱️ RTT: ${rttMs}ms
+            ⏱️ ${rttMs}ms • ${modelTag}
           </div>
         `;
 
         if (latencyBadge) {
-          latencyBadge.textContent = `⚡ آخر استجابة: ${rttMs}ms`;
+          latencyBadge.textContent = `⚡ الاستجابة: ${rttMs}ms`;
         }
 
         chatHistory.push({ role: "user", text: userText });
         chatHistory.push({ role: "assistant", text: replyText });
-
-        console.log(`[Chatbot RTT] ${PRIMARY_MODEL} returned in ${rttMs}ms`);
-
       } catch (err) {
         clearTimeout(timeoutId);
         const rttMs = Math.round(performance.now() - startTime);
-        console.error("[Chatbot Error]", err);
         const msg = err.name === "AbortError" ? "انتهت مهلة الانتظار." : err.message;
+
         assistantMsgElem.querySelector(".ai-message-content").innerHTML = `
           <span style="color:#ef4444;">⚠️ خطأ: ${escapeHtml(msg)}</span>
-          <div style="margin-top:4px; font-size:0.72rem; color:var(--text-muted); direction:ltr;">RTT: ${rttMs}ms</div>
+          <div style="margin-top:4px; font-size:0.72rem; color:var(--text-muted); direction:ltr;">⏱️ ${rttMs}ms</div>
         `;
+
         if (latencyBadge) latencyBadge.textContent = `❌ فشل (${rttMs}ms)`;
       } finally {
         input.disabled = false;
@@ -266,11 +192,14 @@
   function appendMessage(role, text) {
     const container = document.getElementById("aiChatMessages");
     if (!container) return null;
+
     const msgDiv = document.createElement("div");
     msgDiv.className = `ai-message ${role}`;
+
     const contentDiv = document.createElement("div");
     contentDiv.className = "ai-message-content";
     contentDiv.textContent = text;
+
     msgDiv.appendChild(contentDiv);
     container.appendChild(msgDiv);
     scrollToBottom();
