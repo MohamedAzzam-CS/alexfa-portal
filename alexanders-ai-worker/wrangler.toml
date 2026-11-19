@@ -1,0 +1,13 @@
+name = "alexanders-ai-api"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+
+[observability]
+enabled = true
+
+[ai]
+binding = "AI"
+
+[[kv_namespaces]]
+binding = "CMS_KV"
+id = "b497b48523404106bdebcba0bba4bed5"
