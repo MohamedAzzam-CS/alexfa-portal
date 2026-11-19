@@ -443,7 +443,7 @@
   text-decoration: underline;
   text-underline-offset: 3px;
   font-weight: 600;
-  word-break: break-all;
+  word-break: break-word;
 }
 
 .alex-chat-msg-body a:hover {

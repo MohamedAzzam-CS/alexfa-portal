@@ -209,8 +209,8 @@
       "2. Zero Dates/Deadlines Rule: NEVER mention, guess, or provide ANY specific dates, timelines, schedules, or deadlines for recruitment, interviews, courses, workshops, trips, or events — even if asked directly. State clearly that schedules and dates are announced dynamically on Alexanders Group's official social media pages (and for interviews, HR contacts applicants via WhatsApp after submitting the application form).",
       "3. Language & Tone: Automatically detect and match the user's language and dialect (Egyptian Arabic if they write in Arabic, Modern Standard Arabic if formal Arabic, or English if they write in English) with a friendly, helpful, student-oriented tone. Keep answers concise, clear, and scannable using short paragraphs or bullet points when listing items.",
       "4. Application Links Rule: Share the Board Application Form ONLY when specifically asked about Board/Leadership roles. Share the Member Application Form when asked about joining as a committee member or applying.",
-      `5. Out-of-Scope Escalation: If a question is not covered in the Knowledge Base, politely state that you do not have that information (matching the user's language) and direct the student to message Alexanders Group on Facebook ${FB_URL} or Instagram ${IG_URL} for accurate details.`,
-      "6. Links Formatting: Always output URLs cleanly as full https:// links (avoid placing parentheses immediately around URLs so they stay clickable).",
+      `5. Out-of-Scope Escalation: If a question is not covered in the Knowledge Base, politely state that you do not have that information (matching the user's language) and direct the student to message Alexanders Group via [our_facebook](${FB_URL}) or [our_instagram](${IG_URL}) for accurate details.`,
+      `6. Links Formatting: ALWAYS format every URL as a clickable Markdown link with a short descriptive title — never print raw URLs as visible text. Use these exact titles for Alexanders Group links: [our_facebook](${FB_URL}), [our_instagram](${IG_URL}), [our_linkedin](${LINKEDIN_URL}), [our_tiktok](${TIKTOK_URL}), [our_youtube](${YOUTUBE_URL}), [our_intro_video](${INTRO_VIDEO_URL}), [member_application_form](${MEMBER_FORM_URL}), and [board_application_form](${BOARD_FORM_URL}). Do not repeat the platform name immediately before the link (e.g., write "- [our_facebook](...)" rather than "- Facebook: [our_facebook](...)").`,
       "",
       "=== ALEXANDERS GROUP KNOWLEDGE BASE ===",
       kbText,
@@ -249,6 +249,46 @@
       .replace(/'/g, "&#39;");
   }
 
+  function getFriendlyLinkLabel(escapedUrl) {
+    const raw = String(escapedUrl || "").replace(/&amp;/gi, "&").trim();
+    const lower = raw.toLowerCase();
+
+    if (lower.includes("1faipqlsfkn_czjz68t4tmcxltahpzud65tlbo3nponrsan1msrre3xa")) {
+      return "member_application_form";
+    }
+    if (lower.includes("1faipqlscy4iyrtpvghlack38xee72-eyg6bya17iwbbsurnm_xrsfma")) {
+      return "board_application_form";
+    }
+    if (lower.includes("vt.tiktok.com/zsbps")) {
+      return "our_intro_video";
+    }
+    if (lower.includes("facebook.com") || lower.includes("fb.com")) {
+      return "our_facebook";
+    }
+    if (lower.includes("instagram.com")) {
+      return "our_instagram";
+    }
+    if (lower.includes("linkedin.com")) {
+      return "our_linkedin";
+    }
+    if (lower.includes("tiktok.com")) {
+      return "our_tiktok";
+    }
+    if (lower.includes("youtube.com") || lower.includes("youtu.be")) {
+      return "our_youtube";
+    }
+    if (lower.includes("docs.google.com/forms")) {
+      return "application_form";
+    }
+
+    try {
+      const parsed = new URL(raw);
+      return parsed.hostname.replace(/^www\./, "");
+    } catch {
+      return escapedUrl;
+    }
+  }
+
   function applyInlineMarkdown(escapedLine) {
     // Strip PUA sentinel range if present in user text so placeholders stay unambiguous
     let line = escapedLine.replace(/[\uE000\uE001]/g, "");
@@ -257,7 +297,13 @@
     // 1. Protect explicit Markdown links [label](https://...)
     line = line.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, label, url) => {
       const idx = linkPlaceholders.length;
-      linkPlaceholders.push(`<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`);
+      const trimmedLabel = label.trim();
+      const displayLabel = /^https?:\/\//i.test(trimmedLabel)
+        ? getFriendlyLinkLabel(url)
+        : label;
+      linkPlaceholders.push(
+        `<a href="${url}" target="_blank" rel="noopener noreferrer" dir="auto">${displayLabel}</a>`
+      );
       return `\uE000L${idx}\uE001`;
     });
 
@@ -283,7 +329,10 @@
 
       if (!/^https?:\/\//i.test(cleanUrl)) return match;
       const idx = linkPlaceholders.length;
-      linkPlaceholders.push(`<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer">${cleanUrl}</a>`);
+      const label = getFriendlyLinkLabel(cleanUrl);
+      linkPlaceholders.push(
+        `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" dir="auto">${label}</a>`
+      );
       return `\uE000L${idx}\uE001${trailing}`;
     });
 
@@ -589,8 +638,8 @@
       return {
         isGreeting: false,
         reply: isEn
-          ? `Schedules and dates for recruitment, interviews, courses, and events are announced dynamically on our official social media pages (not fixed in advance). Follow us for updates:\n- Facebook: ${FB_URL}\n- Instagram: ${IG_URL}\nIf you already submitted the form, an HR team member will contact you via WhatsApp to arrange your interview.`
-          : `مواعيد التقديم، الانترفيوهات، الكورسات، والفعاليات بتُعلن بشكل متجدد أول بأول على صفحاتنا الرسمية مش بمواعيد ثابتة:\n- فيسبوك: ${FB_URL}\n- إنستجرام: ${IG_URL}\nوبالنسبة للي ملأ الفورم بالفعل، بيتواصل معاه مسؤول من الـ HR على واتساب لتحديد ميعاد ومكان الانترفيو.`,
+          ? `Schedules and dates for recruitment, interviews, courses, and events are announced dynamically on our official social media pages (not fixed in advance). Follow us for updates:\n- [our_facebook](${FB_URL})\n- [our_instagram](${IG_URL})\nIf you already submitted the form, an HR team member will contact you via WhatsApp to arrange your interview.`
+          : `مواعيد التقديم، الانترفيوهات، الكورسات، والفعاليات بتُعلن بشكل متجدد أول بأول على صفحاتنا الرسمية مش بمواعيد ثابتة:\n- [our_facebook](${FB_URL})\n- [our_instagram](${IG_URL})\nوبالنسبة للي ملأ الفورم بالفعل، بيتواصل معاه مسؤول من الـ HR على واتساب لتحديد ميعاد ومكان الانترفيو.`,
       };
     }
 
@@ -606,8 +655,8 @@
       return {
         isGreeting: false,
         reply: isEn
-          ? `You can apply for **The Board** through the Board Application Form here:\n${BOARD_FORM_URL}\nAfter submitting the form, an HR representative will contact you via WhatsApp to schedule your interview date, time, and location.`
-          : `تقدر تقدم على **البورد (Board)** من خلال فورم التقديم للبورد هنا:\n${BOARD_FORM_URL}\nوبعد ملء الفورم، هيتواصل معاك ممثل من لجنة الـ HR على واتساب لتحديد ميعاد ومكان المقابلة.`,
+          ? `You can apply for **The Board** here:\n[board_application_form](${BOARD_FORM_URL})\nAfter submitting the form, an HR representative will contact you via WhatsApp to schedule your interview date, time, and location.`
+          : `تقدر تقدم على **البورد (Board)** من هنا:\n[board_application_form](${BOARD_FORM_URL})\nوبعد ملء الفورم، هيتواصل معاك ممثل من لجنة الـ HR على واتساب لتحديد ميعاد ومكان المقابلة.`,
       };
     }
 
@@ -691,8 +740,8 @@
       return {
         isGreeting: false,
         reply: isEn
-          ? `To join as a Committee Member:\n1. Fill out the Member Application Form:\n${MEMBER_FORM_URL}\n2. An HR team member will contact you via WhatsApp to schedule your interview time and location.\n3. Pass the committee interview to join as a Member!`
-          : `خطوات الانضمام لعضوية اللجان في ألكساندرز:\n1. املا فورم التقديم كـ عضو:\n${MEMBER_FORM_URL}\n2. هيتواصل معاك مسؤول من لجنة الـ HR على واتساب لتحديد ميعاد ومكان الانترفيو.\n3. بعد اجتياز المقابلة، بتنضم للجنة بصفة Member!`,
+          ? `To join as a Committee Member:\n1. Fill out the form: [member_application_form](${MEMBER_FORM_URL})\n2. An HR team member will contact you via WhatsApp to schedule your interview time and location.\n3. Pass the committee interview to join as a Member!`
+          : `خطوات الانضمام لعضوية اللجان في ألكساندرز:\n1. املا الفورم من هنا: [member_application_form](${MEMBER_FORM_URL})\n2. هيتواصل معاك مسؤول من لجنة الـ HR على واتساب لتحديد ميعاد ومكان الانترفيو.\n3. بعد اجتياز المقابلة، بتنضم للجنة بصفة Member!`,
       };
     }
 
@@ -760,8 +809,8 @@
       return {
         isGreeting: false,
         reply: isEn
-          ? `Official Alexanders Group channels:\n- Facebook: ${FB_URL}\n- Instagram: ${IG_URL}\n- LinkedIn: ${LINKEDIN_URL}\n- TikTok: ${TIKTOK_URL}\n- YouTube: ${YOUTUBE_URL}\n- Intro Video: ${INTRO_VIDEO_URL}`
-          : `الصفحات الرسمية لكيان ألكساندرز:\n- فيسبوك: ${FB_URL}\n- إنستجرام: ${IG_URL}\n- لينكد إن: ${LINKEDIN_URL}\n- تيك توك: ${TIKTOK_URL}\n- يوتيوب: ${YOUTUBE_URL}\n- الفيديو التعريفي: ${INTRO_VIDEO_URL}`,
+          ? `Official Alexanders Group channels:\n- [our_facebook](${FB_URL})\n- [our_instagram](${IG_URL})\n- [our_linkedin](${LINKEDIN_URL})\n- [our_tiktok](${TIKTOK_URL})\n- [our_youtube](${YOUTUBE_URL})\n- [our_intro_video](${INTRO_VIDEO_URL})`
+          : `الصفحات الرسمية لكيان ألكساندرز:\n- [our_facebook](${FB_URL})\n- [our_instagram](${IG_URL})\n- [our_linkedin](${LINKEDIN_URL})\n- [our_tiktok](${TIKTOK_URL})\n- [our_youtube](${YOUTUBE_URL})\n- [our_intro_video](${INTRO_VIDEO_URL})`,
       };
     }
 
@@ -897,7 +946,7 @@
         const msg =
           err?.message && /file|http|تعذر/i.test(err.message)
             ? err.message
-            : `حدث خطأ أثناء الاتصال بالمساعد الذكي. يمكنك المحاولة مرة أخرى أو التواصل معنا على فيسبوك ${FB_URL}`;
+            : `حدث خطأ أثناء الاتصال بالمساعد الذكي. يمكنك المحاولة مرة أخرى أو التواصل معنا عبر [our_facebook](${FB_URL})`;
         assistantNode.msgEl.classList.add("alex-chat-msg--error");
         const errDir = detectDirection(msg);
         assistantNode.msgEl.setAttribute("dir", errDir);
