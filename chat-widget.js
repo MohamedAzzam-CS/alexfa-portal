@@ -6,7 +6,6 @@
   "use strict";
 
   const KB_URL = "./alexanders_knowledge_base.txt";
-  const USERS_API_URL = "https://alexanders-ai-api.sci-mohamedelsayed32561.workers.dev/users";
   const MODEL_CANDIDATES = [
     "google/gemini-2.5-flash",
     "deepseek/deepseek-chat",
@@ -74,41 +73,6 @@
     }
   }
 
-  async function syncUserToDatabase(user) {
-    try {
-      const email = String(user?.email || "").trim().toLowerCase();
-      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return;
-
-      const name = String(user?.name || user?.username || email.split("@")[0]).trim();
-      if (!name) return;
-
-      const puterUuid = String(user?.uuid || "").trim();
-      const cacheKey = `alex_user_synced_v1:${email}:${name}`;
-
-      try {
-        if (window.sessionStorage?.getItem(cacheKey) === "1") return;
-      } catch {
-        // Ignore sessionStorage restrictions
-      }
-
-      const res = await fetch(USERS_API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, puterUuid }),
-      });
-
-      if (res.ok) {
-        try {
-          window.sessionStorage?.setItem(cacheKey, "1");
-        } catch {
-          // Ignore sessionStorage restrictions
-        }
-      }
-    } catch (err) {
-      console.warn("[Alexanders Chat] User DB sync failed:", err?.message || err);
-    }
-  }
-
   async function refreshAuthUI() {
     if (!dom.statusText || !dom.authPill) return;
 
@@ -126,9 +90,6 @@
           const user = await window.puter.auth.getUser();
           if (user?.username) {
             dom.statusText.textContent = `متصل • ${user.username}`;
-          }
-          if (user) {
-            syncUserToDatabase(user);
           }
         }
       } catch {
