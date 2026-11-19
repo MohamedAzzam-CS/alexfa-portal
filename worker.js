@@ -80,25 +80,147 @@ function getCorsHeaders(request) {
 }
 
 // ==============================================================================
-// Step 2: Modern Gemini Models Cascade (Only Actively Supported Models)
+// Step 2: Full-Fleet Model Cascade & Payload Adapter
 // ==============================================================================
-const DEFAULT_PRIMARY_MODEL = "gemini-3.1-flash-lite";
-
-const BACKUP_MODELS = [
+const ALL_CHAT_MODELS = [
+  "gemini-3.1-flash-lite",
   "gemini-3.5-flash-lite",
+  "gemini-flash-lite-latest",
+  "gemini-2.5-flash-lite",
+  "gemini-3.6-flash",
+  "gemini-3.7-flash",
   "gemini-3.8-flash",
+  "gemini-3.5-flash",
+  "gemini-flash-latest",
+  "gemini-2.5-flash",
+  "gemma-4-26b-a4b-it",
+  "gemma-4-31b-it",
+  "gemini-pro-latest",
+  "gemini-2.5-pro",
 ];
 
 function getCandidateModels(env) {
-  const primary = (env.PRIMARY_MODEL || DEFAULT_PRIMARY_MODEL).trim();
-  const models = [primary];
+  const primary = (env.PRIMARY_MODEL || "").trim();
+  if (!primary) return [...ALL_CHAT_MODELS];
+  return [primary, ...ALL_CHAT_MODELS.filter((m) => m !== primary)];
+}
 
-  for (const m of BACKUP_MODELS) {
-    if (!models.includes(m)) {
-      models.push(m);
-    }
+function buildModelPayload(model, contents, systemInstruction, maxTokens = 140) {
+  const isGemma = model.startsWith("gemma-");
+  const isGemini25 = model.includes("2.5");
+  const isProOnly = model.includes("-pro");
+
+  const generationConfig = {
+    temperature: 0.2,
+    maxOutputTokens: maxTokens,
+    topP: 0.8,
+  };
+
+  if (isGemini25) {
+    if (!isProOnly) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  } else if (model.includes("3.1") || model.includes("3.5") || model.includes("3.6")) {
+    generationConfig.thinkingConfig = { thinkingLevel: "minimal" };
+  } else if (model.includes("3.7") || model.includes("3.8") || isGemma) {
+    generationConfig.thinkingConfig = { thinkingLevel: "low" };
   }
-  return models;
+
+  return {
+    systemInstruction: { parts: [{ text: systemInstruction }] },
+    contents,
+    generationConfig,
+  };
+}
+
+// ==============================================================================
+// Step 2.5: One-Time Calibration Beacon & Time-Decaying Score Dictionary
+// ==============================================================================
+const SCORE_CACHE_URL = "https://scores.internal/model-scores-v2";
+const PENALTY_HALF_LIFE_SEC = 120; // Penalties decay by 50% every 2 minutes
+
+async function loadScoreState() {
+  try {
+    const res = await caches.default.match(SCORE_CACHE_URL);
+    if (!res) return null; // Null signals cold start -> triggers one-time calibration beacon
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+async function saveScoreState(state, ctx) {
+  try {
+    const req = caches.default.put(
+      SCORE_CACHE_URL,
+      new Response(JSON.stringify(state), {
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "public, max-age=86400",
+        },
+      })
+    );
+    if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(req);
+    else await req;
+  } catch {}
+}
+
+// Runs ONCE on cold start using ONLY the locked beaconKeys (e.g. Keys #6 & #7)
+async function runInitialCalibrationBeacon(models, beaconKeys, ctx) {
+  const pingContents = [{ role: "user", parts: [{ text: "ok" }] }];
+  const baseKeyIdx = Math.floor(Math.random() * beaconKeys.length);
+
+  const probes = models.map(async (model, idx) => {
+    const apiKey = beaconKeys[(baseKeyIdx + idx) % beaconKeys.length];
+    const endpoint = `${GEMINI_API_BASE}/${model}:generateContent?key=${apiKey}`;
+    const start = Date.now();
+
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildModelPayload(model, pingContents, "Reply with 1 word.", 2)),
+      signal: AbortSignal.timeout(3000),
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data.candidates?.[0]?.content?.parts?.[0]?.text) throw new Error("Empty");
+
+    return { model, tookMs: Date.now() - start };
+  });
+
+  const results = await Promise.allSettled(probes);
+  const scores = {};
+  let healthyCount = 0;
+
+  results.forEach((outcome, idx) => {
+    const model = models[idx];
+    if (outcome.status === "fulfilled") {
+      scores[model] = outcome.value.tookMs; // Initial score = actual measured latency (ms)
+      healthyCount++;
+    } else {
+      scores[model] = 50000; // Penalize dead/congested models right away
+    }
+  });
+
+  const state = { scores, updatedAt: Date.now() };
+  await saveScoreState(state, ctx);
+  console.log(`[Initial Beacon] Calibrated ${healthyCount}/${models.length} live models.`, scores);
+
+  return { state, healthyCount };
+}
+
+// Decays old penalties over elapsed time so throttled models gradually re-enter rotation
+function getDecayedScores(state, models) {
+  const elapsedSec = Math.max(0, (Date.now() - (state.updatedAt || Date.now())) / 1000);
+  const decayMultiplier = Math.pow(0.5, elapsedSec / PENALTY_HALF_LIFE_SEC);
+
+  const decayed = {};
+  for (const m of models) {
+    const raw = typeof state.scores[m] === "number" ? state.scores[m] : 1000;
+    decayed[m] = raw > 1500
+      ? Math.max(1200, Math.round(raw * decayMultiplier))
+      : raw;
+  }
+  return decayed;
 }
 
 // ==============================================================================
@@ -129,53 +251,78 @@ async function getSystemInstruction(env) {
 }
 
 // ==============================================================================
-// Step 4: Dynamic API Key Discovery (Scales from 3 to N keys automatically)
+// Step 4: Dynamic API Key Discovery & Pool Partitioning (Chat vs. Beacon)
 // ==============================================================================
-function getApiKeys(env) {
-  const discoveredKeys = Object.keys(env)
+function getPartitionedKeys(env) {
+  let allKeys = Object.keys(env)
     .filter((name) => name.startsWith("GEMINI_KEY_") && env[name])
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true })) // Handles GEMINI_KEY_1..GEMINI_KEY_10+ cleanly
     .map((name) => env[name].trim())
     .filter(Boolean);
 
-  if (discoveredKeys.length === 0 && env.GEMINI_KEYS) {
-    return env.GEMINI_KEYS.split(",")
+  if (allKeys.length === 0 && env.GEMINI_KEYS) {
+    allKeys = env.GEMINI_KEYS.split(",")
       .map((k) => k.trim())
       .filter(Boolean);
   }
 
-  return discoveredKeys;
+  if (allKeys.length <= 2) {
+    return { allKeys, chatKeys: allKeys, beaconKeys: allKeys };
+  }
+
+  // Lock the last 2 keys (e.g., Keys #6 & #7) for the calibration beacon
+  const beaconKeys = allKeys.slice(-2);
+  const chatKeys = allKeys.slice(0, -2);
+
+  return { allKeys, chatKeys, beaconKeys };
 }
 
 // ==============================================================================
-// Step 5: Core Generation Engine with Multi-Key Pool & Model Fallback
+// Step 5: Score-Sorted Generation Engine (Zero Post-Calibration Beacons)
 // ==============================================================================
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
-const PER_ATTEMPT_TIMEOUT_MS = 8000;
+const PER_ATTEMPT_TIMEOUT_MS = 2200;
+const MAX_TOTAL_WALL_MS = 7000;
+const MAX_KEY_RETRIES_PER_MODEL = 2;
 
-async function generateChatReply(contents, keys, candidateModels, systemInstruction) {
+async function generateChatReply(contents, keyPools, candidateModels, systemInstruction, ctx) {
+  const { chatKeys, beaconKeys } = keyPools;
+  const engineStart = Date.now();
+  let state = await loadScoreState();
+
+  // 1. Cold-Start Gate: Run initial beacon ONCE using ONLY locked beaconKeys (Keys #6 & #7)
+  if (!state || !state.scores) {
+    const calibration = await runInitialCalibrationBeacon(candidateModels, beaconKeys, ctx);
+    if (calibration.healthyCount === 0) {
+      throw new Error("خدمة الذكاء الاصطناعي غير متاحة حالياً (جميع النماذج مشغولة)، يرجى المحاولة بعد قليل.");
+    }
+    state = calibration.state;
+  }
+
+  // 2. Decay existing scores by elapsed time and sort ascending (lowest score = fastest/healthiest)
+  const scores = getDecayedScores(state, candidateModels);
+  const rankedModels = [...candidateModels].sort((a, b) => scores[a] - scores[b]);
+
   let lastError = null;
-  const startKeyIndex = Math.floor(Math.random() * keys.length);
+  const attemptTrace = [];
+  const startKeyIndex = Math.floor(Math.random() * chatKeys.length);
+  const maxAttempts = Math.min(chatKeys.length, MAX_KEY_RETRIES_PER_MODEL);
 
-  for (const model of candidateModels) {
-    for (let attempt = 0; attempt < keys.length; attempt++) {
-      const keyIndex = (startKeyIndex + attempt) % keys.length;
-      const apiKey = keys[keyIndex];
+  for (const model of rankedModels) {
+    if (Date.now() - engineStart > MAX_TOTAL_WALL_MS) {
+      lastError = "تجاوز الطلب الحد الأقصى للانتظار.";
+      break;
+    }
 
+    const payload = buildModelPayload(model, contents, systemInstruction, 140);
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      if (Date.now() - engineStart > MAX_TOTAL_WALL_MS) break;
+
+      const keyIndex = (startKeyIndex + attempt) % chatKeys.length;
+      const apiKey = chatKeys[keyIndex];
+      const attemptStart = Date.now();
       const endpoint = `${GEMINI_API_BASE}/${model}:generateContent?key=${apiKey}`;
-      const payload = {
-        systemInstruction: {
-          parts: [{ text: systemInstruction }],
-        },
-        contents: contents,
-        generationConfig: {
-          temperature: 0.2,
-          maxOutputTokens: 120,
-          topP: 0.8,
-          thinkingConfig: {
-            thinkingBudget: 0,
-          },
-        },
-      };
 
       try {
         const response = await fetch(endpoint, {
@@ -185,17 +332,26 @@ async function generateChatReply(contents, keys, candidateModels, systemInstruct
           signal: AbortSignal.timeout(PER_ATTEMPT_TIMEOUT_MS),
         });
 
-        // 1. Quota or demand throttle (429 / 503) -> Rotate to NEXT KEY
-        if (response.status === 429 || response.status === 503) {
-          console.warn(`[Key Failover] Key index ${keyIndex} throttled (${response.status}) on ${model}. Trying next key...`);
-          lastError = `Key #${keyIndex + 1} throttled on ${model} (HTTP ${response.status})`;
+        const tookMs = Date.now() - attemptStart;
+
+        // Per-key quota throttle (429) -> slight score bump, rotate to next chat key
+        if (response.status === 429) {
+          attemptTrace.push({ model, key: keyIndex + 1, status: 429, tookMs });
+          scores[model] += 1500;
+          await saveScoreState({ scores, updatedAt: Date.now() }, ctx);
+          lastError = `Chat Key #${keyIndex + 1} throttled on ${model}`;
           continue;
         }
 
-        // 2. Model deprecated or not found (404) -> Skip remaining keys, switch to NEXT MODEL
-        if (response.status === 404) {
-          console.warn(`[Model Failover] Model ${model} returned 404. Switching to fallback model...`);
-          lastError = `Model ${model} unavailable (HTTP 404)`;
+        // Model-level error (503 congestion, 404 unavailable, 400 invalid arg) -> penalize & skip immediately
+        if (response.status === 503 || response.status === 404 || response.status === 400) {
+          const errData = await response.json().catch(() => ({}));
+          const reason = errData.error?.message || `HTTP ${response.status}`;
+          attemptTrace.push({ model, key: keyIndex + 1, status: response.status, tookMs, reason });
+
+          scores[model] += response.status === 503 ? 15000 : 50000;
+          await saveScoreState({ scores, updatedAt: Date.now() }, ctx);
+          lastError = `${model} unavailable (HTTP ${response.status})`;
           break;
         }
 
@@ -209,43 +365,59 @@ async function generateChatReply(contents, keys, candidateModels, systemInstruct
         const replyText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
 
         if (replyText) {
+          // Reward successful model by updating its EWMA latency score
+          scores[model] = Math.round(scores[model] * 0.7 + tookMs * 0.3);
+          await saveScoreState({ scores, updatedAt: Date.now() }, ctx);
+
           return {
             reply: replyText,
             modelUsed: model,
-            keyIndexUsed: keyIndex,
+            modelScore: scores[model],
           };
         }
 
-        lastError = `Empty response from ${model} (Key #${keyIndex + 1})`;
+        lastError = `Empty response from ${model}`;
       } catch (err) {
-        lastError = err.name === "TimeoutError"
-          ? `Key #${keyIndex + 1} timed out on ${model}`
-          : err.message;
+        const tookMs = Date.now() - attemptStart;
+        const isTimeout = err.name === "TimeoutError";
+        attemptTrace.push({ model, key: keyIndex + 1, status: isTimeout ? "TIMEOUT" : "ERR", tookMs });
+
+        if (isTimeout) {
+          scores[model] += 15000;
+          await saveScoreState({ scores, updatedAt: Date.now() }, ctx);
+          lastError = `${model} timed out`;
+          break;
+        }
+        lastError = err.message;
       }
     }
   }
 
-  throw new Error(lastError || "جميع مفاتيح الخدمة مشغولة حالياً، يرجى إعادة المحاولة خلال ثوانٍ.");
+  await saveScoreState({ scores, updatedAt: Date.now() }, ctx);
+  const finalError = new Error(lastError || "جميع مفاتيح الخدمة مشغولة حالياً، يرجى إعادة المحاولة خلال ثوانٍ.");
+  finalError.trace = attemptTrace;
+  throw finalError;
 }
-
 // ==============================================================================
 // Step 6: Worker Export Fetch Handler (Main Entry Point)
 // ==============================================================================
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const corsHeaders = getCorsHeaders(request);
 
     // 1. Handle Browser Preflight OPTIONS
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: corsHeaders });
     }
-  const origin = request.headers.get("Origin");
-      if (origin && !isOriginAllowed(origin)) {
-        return new Response(
-          JSON.stringify({ error: "Origin not allowed." }),
-          { status: 403, headers: { "Content-Type": "application/json" } }
-        );
-      }
+
+    const origin = request.headers.get("Origin");
+    if (origin && !isOriginAllowed(origin)) {
+      return new Response(
+        JSON.stringify({ error: "Origin not allowed." }),
+        { status: 403, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
     // 2. Enforce POST
     if (request.method !== "POST") {
       return new Response(
@@ -268,9 +440,9 @@ export default {
         );
       }
 
-      // Discover keys dynamically from environment (GEMINI_KEY_*)
-      const keys = getApiKeys(env);
-      if (keys.length === 0) {
+      // Discover and partition keys (chatKeys vs. locked beaconKeys)
+      const keyPools = getPartitionedKeys(env);
+      if (keyPools.allKeys.length === 0) {
         return new Response(
           JSON.stringify({
             error: "لم يتم ضبط أي مفاتيح API في بيئة الـ Worker (No GEMINI_KEY_* configured).",
@@ -299,16 +471,18 @@ export default {
         parts: [{ text: userMessage }],
       });
 
-      // Execute request with multi-key pool and model cascade
-      const result = await generateChatReply(contents, keys, candidateModels, systemInstruction);
+      // Execute request with isolated key pools and score-sorted model ranking
+      const result = await generateChatReply(contents, keyPools, candidateModels, systemInstruction, ctx);
       const latencyMs = Date.now() - startTime;
 
       return new Response(
         JSON.stringify({
           reply: result.reply,
           model: result.modelUsed,
+          modelScore: result.modelScore,
           latencyMs: latencyMs,
-          poolSize: keys.length,
+          chatPoolSize: keyPools.chatKeys.length,
+          beaconPoolSize: keyPools.beaconKeys.length,
         }),
         {
           status: 200,
@@ -317,10 +491,12 @@ export default {
       );
     } catch (err) {
       const latencyMs = Date.now() - startTime;
+      console.error("[Worker Failed]", JSON.stringify({ error: err.message, latencyMs, trace: err.trace }));
       return new Response(
         JSON.stringify({
           error: err.message || "حدث خطأ غير متوقع أثناء معالجة الطلب.",
           latencyMs: latencyMs,
+          trace: err.trace || [],
         }),
         {
           status: 503,

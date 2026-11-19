@@ -3,7 +3,7 @@
 // ==============================================================================
 (function () {
   const CHAT_API_ENDPOINT = "https://alexanders-ai-api.sci-mohamedelsayed32561.workers.dev/";
-  const TIMEOUT_MS = 12000;
+  const TIMEOUT_MS = 25000;
   let chatHistory = [];
 
   function injectChatWidgetDOM() {
@@ -124,9 +124,7 @@
       if (latencyBadge) latencyBadge.textContent = "⏳ جاري المعالجة...";
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => {
-        controller.abort("تجاوزت الاستجابة مهلة الانتظار (12 ثانية).");
-      }, TIMEOUT_MS);
+      const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
       try {
         const payload = {
@@ -143,6 +141,7 @@
 
         clearTimeout(timeoutId);
         const rttMs = Math.round(performance.now() - startTime);
+        if (latencyBadge) latencyBadge.textContent = `⚡ ${rttMs}ms`;
 
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
@@ -152,13 +151,16 @@
         const data = await res.json();
         const replyText = data.reply?.trim() || "عذرًا، لم أتمكن من الحصول على رد.";
 
-        assistantMsgElem.querySelector(".ai-message-content").innerHTML = escapeHtml(replyText);
+        assistantMsgElem.querySelector(".ai-message-content").innerHTML = formatReply(replyText);
 
         chatHistory.push({ role: "user", text: userText });
         chatHistory.push({ role: "assistant", text: replyText });
       } catch (err) {
         clearTimeout(timeoutId);
-        const msg = err.name === "AbortError" ? "انتهت مهلة الانتظار. يرجى المحاولة مرة أخرى." : err.message;
+        const msg =
+          err.name === "AbortError"
+            ? "انتهت مهلة الانتظار. يرجى المحاولة مرة أخرى."
+            : err.message || "حدث خطأ غير متوقع.";
 
         assistantMsgElem.querySelector(".ai-message-content").innerHTML = `<span style="color:#ef4444;">⚠️ ${escapeHtml(msg)}</span>`;
       } finally {
@@ -198,6 +200,13 @@
     const div = document.createElement("div");
     div.textContent = str;
     return div.innerHTML;
+  }
+
+  function formatReply(str) {
+    return escapeHtml(str)
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>')
+      .replace(/\n/g, "<br>");
   }
 
   if (document.readyState === "loading") {
