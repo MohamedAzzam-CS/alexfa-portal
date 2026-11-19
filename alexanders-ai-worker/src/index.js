@@ -1,8 +1,10 @@
-import { getCorsHeaders, isOriginAllowed, jsonResponse } from "./utils/cors.js";
+import { getCorsHeaders, jsonResponse } from "./utils/cors.js";
 import { getKbMetadata, getSelectedSections, getTempData } from "./storage/kb.js";
 import { matchInstantReply, getCachedAnswer, setCachedAnswer } from "./pipeline/cache.js";
+import { getSemanticCachedAnswer, setSemanticCachedAnswer } from "./pipeline/semantic-cache.js";
 import { routeMessage } from "./pipeline/router.js";
-import { generateResponse } from "./pipeline/responder.js";
+import { generateResponse, generateStreamResponse } from "./pipeline/responder.js";
+import { embedText } from "./utils/vector.js";
 import { handleAdminSync } from "./admin/sync.js";
 
 export default {
@@ -13,154 +15,159 @@ export default {
       return new Response(null, { status: 204, headers: corsHeaders });
     }
 
-    const origin = request.headers.get("Origin");
-    if (origin && !isOriginAllowed(origin)) {
-      return jsonResponse({ error: "Origin not allowed." }, 403);
+    const url = new URL(request.url);
+
+    if (request.method === "POST" && url.pathname === "/admin/sync") {
+      return handleAdminSync(request, env, corsHeaders);
     }
 
     if (request.method !== "POST") {
+      return jsonResponse({ error: "Method Not Allowed. Use POST." }, 405, corsHeaders);
+    }
+
+    const body = await request.json().catch(() => null);
+    const userMessage = typeof body?.message === "string" ? body.message.trim() : "";
+    const history = Array.isArray(body?.history) ? body.history : [];
+
+    if (!userMessage) {
+      return jsonResponse({ error: "Missing 'message' in request body." }, 400, corsHeaders);
+    }
+
+    const isStandalone = history.length === 0;
+
+    // Layer 0A: Instant Regex Short-Circuit (<1ms, 0 Neurons)
+    const instantReply = matchInstantReply(userMessage);
+    if (instantReply) {
       return jsonResponse(
-        { error: "Method not allowed. Please use POST." },
-        405,
+        { reply: instantReply, meta: { layer: "0A_REGEX", cached: true } },
+        200,
         corsHeaders
       );
     }
 
-    const url = new URL(request.url);
-    if (url.pathname === "/admin/sync") {
-      return handleAdminSync(request, env, corsHeaders);
+    const kbMeta = await getKbMetadata(env);
+
+    // Layer 0B: Exact Edge Cache (SHA-256)
+    if (isStandalone) {
+      const exactHit = await getCachedAnswer(kbMeta.version, userMessage);
+      if (exactHit?.reply) {
+        return jsonResponse(
+          { ...exactHit, meta: { ...(exactHit.meta || {}), layer: "0B_EXACT_CACHE", cached: true } },
+          200,
+          corsHeaders
+        );
+      }
     }
 
-    const startTime = Date.now();
-
+    // Single Embedding Call (~50ms) -> powers both Semantic Cache & Vector Router
+    let queryVec = null;
     try {
-      const body = await request.json().catch(() => ({}));
-      const userMessage = (body.message || "").trim();
-      const history = Array.isArray(body.history) ? body.history : [];
-      const isStandalone = history.length === 0;
+      const embedInput =
+        !isStandalone && history.length > 0
+          ? `${history[history.length - 1]?.text || ""} ${userMessage}`.trim()
+          : userMessage;
+      queryVec = await embedText(env, embedInput);
+    } catch (err) {
+      console.warn("[Pipeline] Embedding failed:", err.message);
+    }
 
-      if (!userMessage) {
-        return jsonResponse(
-          { error: "حقل الرسالة مطلوب (message is required)." },
-          400,
-          corsHeaders
-        );
-      }
-
-      if (!env.AI || typeof env.AI.run !== "function") {
-        return jsonResponse(
-          { error: "Workers AI binding (AI) is not configured." },
-          500,
-          corsHeaders
-        );
-      }
-
-      // LAYER 0A: Instant Regex Short-Circuit (0 Neurons, <1ms)
-      if (isStandalone) {
-        const instantReply = matchInstantReply(userMessage);
-        if (instantReply) {
-          return jsonResponse(
-            {
-              reply: instantReply,
-              mode: "INSTANT",
-              source: "regex",
-              latencyMs: Date.now() - startTime,
-            },
-            200,
-            corsHeaders
-          );
-        }
-      }
-
-      const kbMeta = await getKbMetadata(env);
-
-      // LAYER 0B: Versioned Edge Cache Lookup (0 Neurons, <10ms)
-      if (isStandalone) {
-        const cached = await getCachedAnswer(kbMeta.version, userMessage);
-        if (cached?.reply) {
-          return jsonResponse(
-            {
-              reply: cached.reply,
-              mode: cached.mode || "KB_FACT",
-              source: "edge-cache",
-              model: cached.model || null,
-              sections: cached.sections || [],
-              latencyMs: Date.now() - startTime,
-            },
-            200,
-            corsHeaders
-          );
-        }
-      }
-
-      // STEP 1: Fast Router & Intent Classifier (glm-4.7-flash)
-      const route = await routeMessage(env, userMessage, history, kbMeta);
-
-      if (route.mode === "SHORT_CIRCUIT" && route.directReply) {
+    // Layer 0C: Semantic Cache (>= 0.92 cosine similarity)
+    if (isStandalone && queryVec) {
+      const semanticHit = await getSemanticCachedAnswer(env, kbMeta.version, queryVec);
+      if (semanticHit?.reply) {
+        // Also populate exact cache for even faster repeat hits
+        setCachedAnswer(kbMeta.version, userMessage, { reply: semanticHit.reply, meta: semanticHit.meta }, ctx);
         return jsonResponse(
           {
-            reply: route.directReply,
-            mode: "SHORT_CIRCUIT",
-            source: "router",
-            latencyMs: Date.now() - startTime,
+            reply: semanticHit.reply,
+            meta: {
+              ...(semanticHit.meta || {}),
+              layer: "0C_SEMANTIC_CACHE",
+              similarity: semanticHit.similarity,
+              cached: true,
+            },
           },
           200,
           corsHeaders
         );
       }
+    }
 
-      // STEP 2: Fetch Scoped Context & Generate Reply
-      const [sectionsText, tempDataText] = await Promise.all([
-        getSelectedSections(env, route.sections),
-        route.needsTempData ? getTempData(env) : Promise.resolve(""),
-      ]);
+    // Step 1: In-Memory Vector Router (~1ms)
+    const route = await routeMessage(env, userMessage, history, kbMeta, queryVec, ctx);
 
-      const { reply, modelUsed } = await generateResponse(env, {
+    if (route.mode === "SHORT_CIRCUIT" && route.directReply) {
+      return jsonResponse(
+        { reply: route.directReply, meta: { layer: "STEP1_SHORT_CIRCUIT", cached: false } },
+        200,
+        corsHeaders
+      );
+    }
+
+    const [sectionsText, tempDataText] = await Promise.all([
+      getSelectedSections(env, route.sections),
+      route.needsTempData ? getTempData(env) : Promise.resolve(""),
+    ]);
+
+    const cacheReply = (reply, modelUsed) => {
+      if (!isStandalone || route.mode !== "KB_FACT" || !reply) return;
+      const payload = {
+        reply,
+        meta: { mode: route.mode, sections: route.sections, modelUsed },
+      };
+      setCachedAnswer(kbMeta.version, userMessage, payload, ctx);
+      if (queryVec) {
+        setSemanticCachedAnswer(env, kbMeta.version, queryVec, payload, ctx);
+      }
+    };
+
+    // Step 2A: SSE Stream for long / multi-section / ADVISOR replies
+    if (route.stream) {
+      const { stream, modelUsed } = await generateStreamResponse(env, {
         mode: route.mode,
         userMessage,
         history,
         sectionsText,
         tempDataText,
+        onComplete: (fullReply, usedModel) => cacheReply(fullReply, usedModel),
       });
 
-      if (isStandalone && route.mode === "KB_FACT") {
-        await setCachedAnswer(
-          kbMeta.version,
-          userMessage,
-          {
-            reply,
-            mode: route.mode,
-            model: modelUsed,
-            sections: route.sections,
-          },
-          ctx
-        );
-      }
-
-      return jsonResponse(
-        {
-          reply,
-          mode: route.mode,
-          source: "workers-ai",
-          model: modelUsed,
-          sections: route.sections,
-          usedTempData: route.needsTempData,
-          latencyMs: Date.now() - startTime,
+      return new Response(stream, {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache",
+          "X-AI-Mode": route.mode,
+          "X-AI-Model": modelUsed,
         },
-        200,
-        corsHeaders
-      );
-    } catch (err) {
-      const latencyMs = Date.now() - startTime;
-      console.error("[Worker Error]", err.message, { latencyMs });
-      return jsonResponse(
-        {
-          error: "حدث خطأ غير متوقع أثناء معالجة الطلب، يرجى المحاولة مرة أخرى.",
-          latencyMs,
-        },
-        503,
-        corsHeaders
-      );
+      });
     }
+
+    // Step 2B: Non-streaming JSON for short, single-fact replies
+    const { reply, modelUsed } = await generateResponse(env, {
+      mode: route.mode,
+      userMessage,
+      history,
+      sectionsText,
+      tempDataText,
+    });
+
+    cacheReply(reply, modelUsed);
+
+    return jsonResponse(
+      {
+        reply,
+        meta: {
+          layer: "STEP2_JSON",
+          mode: route.mode,
+          sections: route.sections,
+          modelUsed,
+          cached: false,
+        },
+      },
+      200,
+      corsHeaders
+    );
   },
 };
