@@ -22,15 +22,61 @@ const ALLOWED_ORIGIN_PATTERNS = [
   /^https:\/\/alexfa\.me$/,
 ];
 
+const CORE_BASE_PROMPT = `أنت المساعد الذكي الرسمي لكيان "ألكساندرز" (ALEXANDERS) الطلابي بجامعة الإسكندرية.
+أسلوبك: ودود، عملي، ومختصر جداً باللهجة المصرية، وتجاوب في سطور قليلة ومباشرة بدون تطويل.
+
+قواعد أساسية:
+- اعتمد فقط على المعلومات المكتوبة هنا. لو اتسألت عن حاجة مش موجودة أو مش متأكد منها، قول بوضوح إن المعلومة مش متاحة حالياً واطلب من السائل يتواصل مع الصفحة الرسمية للكيان.
+- ممنوع تأليف أي مواعيد، روابط، أو شروط مش مذكورة.
+
+[1] التعريف والتبعية:
+- كيان طلابي رسمي تابع لإدارة جامعة الإسكندرية (الإدارة العامة لرعاية الشباب - إدارة الأسر الطلابية) تحت إشراف أ.د/ نائب رئيس الجامعة لشؤون التعليم والطلاب.
+
+[2] الأنشطة والمميزات:
+- تدريبات، كورسات، سيشنز، ندوات، وإيفنتات لتطوير المهارات (Soft & Hard Skills) وتجهيز الطلاب لسوق العمل مع تركيز على التنمية المستدامة، بالإضافة لرحلات وزيارات ميدانية.
+- كل الأنشطة مجانية 100%، ومعظمها بشهادات معتمدة، وأحياناً بدلات انتقال للزيارات الميدانية.
+
+[3] شروط الانضمام ونظام العضوية:
+- متاح حصرياً لـ: طلبة جامعة الإسكندرية وجامعة الإسكندرية الأهلية (أي كلية أو فرقة).
+- غير متاح لـ: الخريجين، طلبة سنة الامتياز، أو طلبة المعاهد والجامعات الأخرى.
+- العضوية نوعان:
+  1. Active Member: تختار لجنة وتعمل interview، وليك دور فعال وأولوية دائماً في الإيفنتات والرحلات والكورسات والورش.
+  2. General Member: تنضم بدون مسؤوليات داخل اللجان.
+
+[4] نظام المتابعة والالتزام (HR Policy):
+- المطلوب: الجدية، الالتزام بالمواعيد والتاسكات، والتواصل السريع، مع مراعاة الكلية والامتحانات (الحضور مش يومي).
+- كل عضو معاه HR Follower بيتابعه ويساعده.
+- سياسة الإنذارات (3 Strikes): بحد أقصى 3 تحذيرات لتجاهل الـ HR، الغياب المتكرر بدون عذر، أو إهمال التاسكات؛ بعد التالت يتم الاستبعاد (Filtration) فوراً.
+- العضو المميز (VIP): يُكرم شهرياً وبياخد أولوية مطلقة وتسهيلات خاصة في كل ما يخص الكيان.
+
+[5] هيكل ولجان الكيان (6 لجان):
+1. لجنة التنظيم (OC): الإدارة الميدانية، التخطيط اللوجستي، وإدارة الفعاليات على أرض الواقع.
+2. لجنة الموارد البشرية (HR): إدارة الأفراد، متابعة وتقييم الأعضاء، وتوفير بيئة عمل متوازنة.
+3. لجنة العلاقات العامة (PR): التمثيل الرسمي، التواصل الخارجي، عقد الشراكات، وتأمين الرعايات.
+4. لجنة الميديا (Media): الإنتاج الرقمي، التوثيق المرئي، إدارة المحتوى، والتصميم الجرافيكي.
+5. اللجنة الفنية (Handmade): الإنتاج الفني، تصميم وتنفيذ ديكورات الأنشطة، وإعادة التدوير.
+6. لجنة البرمجة (Programming): الدعم التقني، الحلول البرمجية، والبنية التحتية التكنولوجية للكيان.`;
+
+function isOriginAllowed(origin) {
+  if (!origin) return false;
+  return ALLOWED_ORIGIN_PATTERNS.some((pattern) => pattern.test(origin));
+}
+
 function getCorsHeaders(request) {
   const origin = request.headers.get("Origin");
 
-  return {
-    "Access-Control-Allow-Origin": origin || "*",
+  const headers = {
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Max-Age": "86400",
+    "Vary": "Origin",
   };
+
+  if (isOriginAllowed(origin)) {
+    headers["Access-Control-Allow-Origin"] = origin;
+  }
+
+  return headers;
 }
 
 // ==============================================================================
@@ -39,8 +85,8 @@ function getCorsHeaders(request) {
 const DEFAULT_PRIMARY_MODEL = "gemini-3.1-flash-lite";
 
 const BACKUP_MODELS = [
+  "gemini-3.5-flash-lite",
   "gemini-3.8-flash",
-  "gemini-2.0-flash",
 ];
 
 function getCandidateModels(env) {
@@ -58,29 +104,28 @@ function getCandidateModels(env) {
 // ==============================================================================
 // Step 3: Dynamic System Prompt / CMS Knowledge Loader
 // ==============================================================================
-const DEFAULT_FALLBACK_PROMPT =
-  "أنت المساعد الذكي لمجتمع ألكساندرز (ALEXANDERS). أجب باختصار وبلهجة مصرية ودودة. إذا لم تكن متأكداً من معلومة، اطلب من السائل التواصل مع صفحة الكيان الرسمية.";
-
 async function getSystemInstruction(env) {
+  let dynamicLayer = "";
+
   // 1. First priority: Cloudflare KV namespace connected to Admin CMS
   if (env.CMS_KV && typeof env.CMS_KV.get === "function") {
     try {
       const kvPrompt = await env.CMS_KV.get("SYSTEM_INSTRUCTION");
-      if (kvPrompt && kvPrompt.trim().length > 20) {
-        return kvPrompt.trim();
+      if (kvPrompt && kvPrompt.trim().length > 10) {
+        dynamicLayer = `\n\n${kvPrompt.trim()}`;
       }
     } catch (err) {
-      console.warn("[CMS] KV read error, falling back to env/default:", err.message);
+      console.warn("[CMS] KV read error, falling back to env:", err.message);
     }
   }
 
-  // 2. Second priority: Environment variable override in Cloudflare Dashboard
-  if (env.SYSTEM_INSTRUCTION && env.SYSTEM_INSTRUCTION.trim().length > 20) {
-    return env.SYSTEM_INSTRUCTION.trim();
+  // 2. Second priority: Environment variable in Cloudflare Dashboard (links & active updates)
+  if (!dynamicLayer && env.SYSTEM_INSTRUCTION && env.SYSTEM_INSTRUCTION.trim().length > 10) {
+    dynamicLayer = `\n\n${env.SYSTEM_INSTRUCTION.trim()}`;
   }
 
-  // 3. Third priority: Minimal safe default
-  return DEFAULT_FALLBACK_PROMPT;
+  // 3. Combine static core facts with dynamic layer (or return static core alone if none set)
+  return `${CORE_BASE_PROMPT}${dynamicLayer}`;
 }
 
 // ==============================================================================
@@ -105,14 +150,13 @@ function getApiKeys(env) {
 // Step 5: Core Generation Engine with Multi-Key Pool & Model Fallback
 // ==============================================================================
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+const PER_ATTEMPT_TIMEOUT_MS = 8000;
 
 async function generateChatReply(contents, keys, candidateModels, systemInstruction) {
   let lastError = null;
   const startKeyIndex = Math.floor(Math.random() * keys.length);
 
   for (const model of candidateModels) {
-    let modelIsInvalid = false;
-
     for (let attempt = 0; attempt < keys.length; attempt++) {
       const keyIndex = (startKeyIndex + attempt) % keys.length;
       const apiKey = keys[keyIndex];
@@ -138,19 +182,19 @@ async function generateChatReply(contents, keys, candidateModels, systemInstruct
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(PER_ATTEMPT_TIMEOUT_MS),
         });
 
         // 1. Quota or demand throttle (429 / 503) -> Rotate to NEXT KEY
         if (response.status === 429 || response.status === 503) {
-          console.warn(`[Key Failover] Key index ${keyIndex} throttled (${response.status}). Trying next key...`);
-          lastError = `Key #${keyIndex + 1} throttled (HTTP ${response.status})`;
+          console.warn(`[Key Failover] Key index ${keyIndex} throttled (${response.status}) on ${model}. Trying next key...`);
+          lastError = `Key #${keyIndex + 1} throttled on ${model} (HTTP ${response.status})`;
           continue;
         }
 
-        // 2. Model deprecated or not found (404) -> Break to NEXT MODEL
+        // 2. Model deprecated or not found (404) -> Skip remaining keys, switch to NEXT MODEL
         if (response.status === 404) {
           console.warn(`[Model Failover] Model ${model} returned 404. Switching to fallback model...`);
-          modelIsInvalid = true;
           lastError = `Model ${model} unavailable (HTTP 404)`;
           break;
         }
@@ -171,13 +215,13 @@ async function generateChatReply(contents, keys, candidateModels, systemInstruct
             keyIndexUsed: keyIndex,
           };
         }
-      } catch (err) {
-        lastError = err.message;
-      }
-    }
 
-    if (!modelIsInvalid && lastError && lastError.includes("throttled")) {
-      break;
+        lastError = `Empty response from ${model} (Key #${keyIndex + 1})`;
+      } catch (err) {
+        lastError = err.name === "TimeoutError"
+          ? `Key #${keyIndex + 1} timed out on ${model}`
+          : err.message;
+      }
     }
   }
 
@@ -195,7 +239,13 @@ export default {
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: corsHeaders });
     }
-
+  const origin = request.headers.get("Origin");
+      if (origin && !isOriginAllowed(origin)) {
+        return new Response(
+          JSON.stringify({ error: "Origin not allowed." }),
+          { status: 403, headers: { "Content-Type": "application/json" } }
+        );
+      }
     // 2. Enforce POST
     if (request.method !== "POST") {
       return new Response(
