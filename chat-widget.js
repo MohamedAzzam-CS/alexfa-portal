@@ -41,6 +41,7 @@
   let kbTextCache = null;
   let kbPromise = null;
   let conversationHistory = [];
+  let hasTopicalHistory = false;
   let pendingMessage = null;
   let isBusy = false;
   let sessionNonce = 0;
@@ -410,11 +411,21 @@
     }
   }
 
+  function setFaqCollapsed(collapsed) {
+    if (!dom.faqBox || !dom.faqToggle || !dom.chips) return;
+    const isCollapsed = Boolean(collapsed);
+    dom.faqBox.classList.toggle("alex-chat-faq-collapsed", isCollapsed);
+    dom.chips.hidden = isCollapsed;
+    dom.faqToggle.setAttribute("aria-expanded", String(!isCollapsed));
+  }
+
   function resetChat() {
     sessionNonce++;
     conversationHistory = [];
+    hasTopicalHistory = false;
     pendingMessage = null;
     hideAuthPrompt();
+    setFaqCollapsed(false);
     setBusy(false);
 
     if (dom.messages) {
@@ -516,188 +527,279 @@
       .trim();
   }
 
-  function matchFaqReply(rawText) {
+  function matchFaqReply(rawText, options = {}) {
+    const { fromFaqChip = false, allowTopicalFaq = true } = options;
     const norm = normalizeForFaq(rawText);
-    if (!norm || norm.length > 110) return null;
-
-    // Leave personal coaching, committee recommendation, or interview prep to full AI
-    if (
-      /(انصحني|تناسبني|مناسب ليا|محتار|مهاراتي|اجهز للانترفيو|استعد|interview tips|prepare for interview|which committee fits|recommend|advice|suitable for me)/.test(
-        norm
-      )
-    ) {
-      return null;
-    }
+    if (!norm) return null;
 
     const isEn = detectDirection(rawText) === "ltr";
 
-    // 1. Greetings & Thanks
+    // 1. Standalone Greetings & Thanks (allowed while signed out even after topical turns)
     if (
-      /^(hi|hello|hey|yo|hola|good morning|good evening|اهلا|اهلا وسهلا|مرحبا|السلام عليكم|سلام عليكم|ازيك|ازيكم|عامل ايه|عاملين ايه|صباح الخير|مساء الخير|هالو|هاي|الو)$/.test(
+      /^(hi|hello|hey|yo|hola|good morning|good evening|good afternoon|اهلا|اهلا بيك|اهلا وسهلا|مرحبا|السلام عليكم|سلام عليكم|ازيك|ازيكم|عامل ايه|عاملين ايه|صباح الخير|مساء الخير|هالو|هاي|الو)$/.test(
         norm
       )
     ) {
-      return isEn
-        ? "Hello and welcome to **Alexanders Group** at Alexandria University! 👋 How can I help you today? You can ask me about our 6 committees, eligibility, membership types, or how to apply."
-        : "أهلاً بك في كيان **ألكساندرز (Alexanders Group)**! 👋 إزاي أقدر أساعدك النهاردة؟ تقدر تسألني عن اللجان الـ 6، شروط الانضمام، الفرق بين أنواع العضوية، أو طريقة التقديم.";
+      return {
+        isGreeting: true,
+        reply: isEn
+          ? "Hello and welcome to **Alexanders Group** at Alexandria University! 👋 How can I help you today? You can ask me about our 6 committees, eligibility, membership types, or how to apply."
+          : "أهلاً بك في كيان **ألكساندرز (Alexanders Group)**! 👋 إزاي أقدر أساعدك النهاردة؟ تقدر تسألني عن اللجان الـ 6، شروط الانضمام، الفرق بين أنواع العضوية، أو طريقة التقديم.",
+      };
     }
 
     if (
-      /^(thanks|thank you|thx|ty|ok|okay|cool|great|bye|goodbye|شكرا|متشكر|تسلم|تسلم ايدك|الف شكر|يعطيك العافيه|تمام|ماشي|اوكي|باي|سلام)$/.test(
+      /^(thanks|thank you|thanks a lot|thx|ty|ok|okay|cool|great|got it|bye|goodbye|شكرا|شكرا جزيلا|متشكر|تسلم|تسلم ايدك|الف شكر|يعطيك العافيه|تمام|ماشي|اوكي|باي|سلام)$/.test(
         norm
       )
     ) {
-      return isEn
-        ? "You're welcome! Feel free to ask anytime if you have more questions about Alexanders Group."
-        : "العفو! لو عندك أي سؤال تاني عن كيان ألكساندرز أو اللجان، أنا موجود دايماً.";
+      return {
+        isGreeting: true,
+        reply: isEn
+          ? "You're welcome! Feel free to ask anytime if you have more questions about Alexanders Group."
+          : "العفو! لو عندك أي سؤال تاني عن كيان ألكساندرز أو اللجان، أنا موجود دايماً.",
+      };
     }
+
+    if (!allowTopicalFaq) return null;
+    if (!fromFaqChip && norm.length > 85) return null;
+
+    const cleaned = norm
+      .replace(
+        /^(لو سمحت|من فضلك|ممكن اعرف|ممكن تقولي|ممكن اسال|عايز اعرف|عاوز اعرف|please|can you tell me|could you tell me)\s+/,
+        ""
+      )
+      .trim();
 
     // 2. Zero Dates / Deadlines Rule (checked BEFORE application/committees)
     if (
-      /(امتي|امتا|ميعاد|مواعيد|متي |متى |ديدلاين|مفتوح|فتح التقديم|موعد|when is|when does|deadline|dates|open now|registration open)/.test(
-        norm
+      /^(امتي|امتا|متي) (التقديم|فتح التقديم|ميعاد التقديم|موعد التقديم|الانترفيو|ميعاد الانترفيو|مواعيد التقديم|مواعيد الكورسات|مواعيد الايفنتات)( في الكساندرز| في الكسندرز| في الكيان)?$/.test(
+        cleaned
+      ) ||
+      /^(هل )?(التقديم مفتوح|التقديم فاتح|في تقديم دلوقتي|فيه تقديم دلوقتي|التقديم مفتوح دلوقتي|مواعيد التقديم ايه|ايه مواعيد التقديم|ميعاد التقديم امتي|ديدلاين التقديم امتي)$/.test(
+        cleaned
+      ) ||
+      /^(when is|when does) (recruitment|registration|application|the interview|interviews|the next event)( open| start)?$/.test(
+        cleaned
+      ) ||
+      /^(is (recruitment|registration|application) open( now)?|what are the (dates|deadlines)( for (recruitment|registration|applying))?)$/.test(
+        cleaned
       )
     ) {
-      return isEn
-        ? `Schedules and dates for recruitment, interviews, courses, and events are announced dynamically on our official social media pages (not fixed in advance). Follow us for updates:\n- Facebook: ${FB_URL}\n- Instagram: ${IG_URL}\nIf you already submitted the form, an HR team member will contact you via WhatsApp to arrange your interview.`
-        : `مواعيد التقديم، الانترفيوهات، الكورسات، والفعاليات بتُعلن بشكل متجدد أول بأول على صفحاتنا الرسمية مش بمواعيد ثابتة:\n- فيسبوك: ${FB_URL}\n- إنستجرام: ${IG_URL}\nوبالنسبة للي ملأ الفورم بالفعل، بيتواصل معاه مسؤول من الـ HR على واتساب لتحديد ميعاد ومكان الانترفيو.`;
+      return {
+        isGreeting: false,
+        reply: isEn
+          ? `Schedules and dates for recruitment, interviews, courses, and events are announced dynamically on our official social media pages (not fixed in advance). Follow us for updates:\n- Facebook: ${FB_URL}\n- Instagram: ${IG_URL}\nIf you already submitted the form, an HR team member will contact you via WhatsApp to arrange your interview.`
+          : `مواعيد التقديم، الانترفيوهات، الكورسات، والفعاليات بتُعلن بشكل متجدد أول بأول على صفحاتنا الرسمية مش بمواعيد ثابتة:\n- فيسبوك: ${FB_URL}\n- إنستجرام: ${IG_URL}\nوبالنسبة للي ملأ الفورم بالفعل، بيتواصل معاه مسؤول من الـ HR على واتساب لتحديد ميعاد ومكان الانترفيو.`,
+      };
     }
 
     // 3. Board Application Form ONLY when specifically asked about applying for Board
     if (
-      /(تقديم.*بورد|اقدم.*بورد|فورم.*بورد|رابط.*بورد|لينك.*بورد|apply.*board|board.*form|board.*application)/.test(
-        norm
+      /^(ازاي اقدم (علي |ل|في )?البورد|طريقه التقديم (علي |ل|في )?البورد|عايز اقدم (علي |ل|في )?البورد|عاوز اقدم (علي |ل|في )?البورد|فورم( تقديم)? البورد|لينك( تقديم)? البورد|رابط( تقديم)? البورد)$/.test(
+        cleaned
+      ) ||
+      /^(how (do i |to )?apply (for|to) (the )?board|board application form|board form( link)?)$/.test(
+        cleaned
       )
     ) {
-      return isEn
-        ? `You can apply for **The Board** through the Board Application Form here:\n${BOARD_FORM_URL}\nAfter submitting the form, an HR representative will contact you via WhatsApp to schedule your interview date, time, and location.`
-        : `تقدر تقدم على **البورد (Board)** من خلال فورم التقديم للبورد هنا:\n${BOARD_FORM_URL}\nوبعد ملء الفورم، هيتواصل معاك ممثل من لجنة الـ HR على واتساب لتحديد ميعاد ومكان المقابلة.`;
+      return {
+        isGreeting: false,
+        reply: isEn
+          ? `You can apply for **The Board** through the Board Application Form here:\n${BOARD_FORM_URL}\nAfter submitting the form, an HR representative will contact you via WhatsApp to schedule your interview date, time, and location.`
+          : `تقدر تقدم على **البورد (Board)** من خلال فورم التقديم للبورد هنا:\n${BOARD_FORM_URL}\nوبعد ملء الفورم، هيتواصل معاك ممثل من لجنة الـ HR على واتساب لتحديد ميعاد ومكان المقابلة.`,
+      };
     }
 
     // 4. Committee Member vs. General Member
     if (
-      /(general member|committee member|عضو عام|اعضاء اللجان|انواع العضويه|member و general|الفرق بين member|الفرق بين العام|difference between.*member)/.test(
-        norm
+      /^(ايه )?(الفرق بين member و general member|الفرق بين committee member و general member|الفرق بين عضو اللجنه و(ال)?عضو العام|الفرق بين اعضاء اللجان والاعضاء العامون|الفرق بين اعضاء اللجان والعضو العام|الفرق بين العام وعضو اللجنه|انواع العضويه( في الكيان| في الكساندرز| في الكسندرز)?|ايه هي انواع العضويه( في الكيان| في الكساندرز| في الكسندرز)?)$/.test(
+        cleaned
+      ) ||
+      /^(what is the )?(difference between (a )?(committee )?member and (a )?general member|types of membership|membership types)( in alexanders( group)?)?$/.test(
+        cleaned
       )
     ) {
-      return isEn
-        ? "We have **2 membership types**:\n- **Committee Members:** Join 1 of our 6 committees after passing an interview, help plan & run activities, and ALWAYS get top priority for all events, courses, workshops, and trips.\n- **General Members:** Join the community and attend activities without committee or organizational duties, based on available spots after Committee Members."
-        : "فيه نوعين للعضوية في **Alexanders Group**:\n- **أعضاء اللجان (Committee Members):** بتنضم لإحدى اللجان الـ 6 بعد الانترفيو، وتشارك في تخطيط وتنفيذ الأنشطة والفعاليات، وليك دائماً **الأولوية المطلقة** في حضور كل الإيفنتات والكورسات والورش والرحلات.\n- **الأعضاء العامون (General Members):** بتكون جزء من عائلة الكيان وتحضر الأنشطة بدون الانضمام للجنة أو مسؤوليات تنظيمية، حسب الأماكن المتاحة وطبيعة النشاط بعد إعطاء الأولوية لأعضاء اللجان.";
+      return {
+        isGreeting: false,
+        reply: isEn
+          ? "We have **2 membership types**:\n- **Committee Members:** Join 1 of our 6 committees after passing an interview, help plan & run activities, and ALWAYS get top priority for all events, courses, workshops, and trips.\n- **General Members:** Join the community and attend activities without committee or organizational duties, based on available spots after Committee Members."
+          : "فيه نوعين للعضوية في **Alexanders Group**:\n- **أعضاء اللجان (Committee Members):** بتنضم لإحدى اللجان الـ 6 بعد الانترفيو، وتشارك في تخطيط وتنفيذ الأنشطة والفعاليات، وليك دائماً **الأولوية المطلقة** في حضور كل الإيفنتات والكورسات والورش والرحلات.\n- **الأعضاء العامون (General Members):** بتكون جزء من عائلة الكيان وتحضر الأنشطة بدون الانضمام للجنة أو مسؤوليات تنظيمية، حسب الأماكن المتاحة وطبيعة النشاط بعد إعطاء الأولوية لأعضاء اللجان.",
+      };
     }
 
     // 5. Members vs. The Board & Promotion Ladder
     if (
-      /(الفرق بين الاعضاء والبورد|الفرق بين العضو والبورد|الاعضاء والبورد|البورد|بورد|board|ترقيات|الترقيه|ترقيه|promotion|vice head|active member)/.test(
-        norm
+      /^(ايه )?(الفرق بين الاعضاء والبورد|الفرق بين العضو والبورد|الفرق بين البورد والاعضاء|الفرق بين member و(ال)?board|نظام الترقيات( في الكيان| في الكساندرز| في الكسندرز)?|ازاي اترقي( في الكيان| في الكساندرز| في الكسندرز)?|ايه هو البورد|مين هما البورد)$/.test(
+        cleaned
+      ) ||
+      /^(what is the )?(difference between (committee )?members and (the )?board|promotion (ladder|system)|how (do i |to )?get promoted)( in alexanders( group)?)?$/.test(
+        cleaned
       )
     ) {
-      return isEn
-        ? "**Committee Members** are the operational backbone executing tasks and organizing activities, while **The Board** (Entity President, Vice Presidents, Committee Heads & Vice Heads) handles strategic planning, decision-making, and supervising committees.\n\n**Promotion Ladder** (earned by commitment & performance, not fixed time):\n1. Member\n2. Active Member\n3. Senior\n4. Vice Head (Lead)\n5. Head (Leader)"
-        : "الفرق بين الأعضاء والبورد:\n- **أعضاء اللجان (Members):** هم العمود الفقري التشغيلي للكيان اللي بينفذوا المهام وينظموا الأنشطة جوا لجانهم.\n- **البورد (The Board):** قيادة الكيان واللجان (رئيس الكيان، نواب الرئيس، وهيدز وفايسز اللجان)، ومسؤولين عن التخطيط الاستراتيجي وإدارة الفرق واتخاذ القرارات.\n\n**نظام الترقيات** (حسب الالتزام والأداء مش بمدة ثابتة):\n1. Member\n2. Active Member\n3. Senior\n4. Vice Head (Lead)\n5. Head (Leader)";
+      return {
+        isGreeting: false,
+        reply: isEn
+          ? "**Committee Members** are the operational backbone executing tasks and organizing activities, while **The Board** (Entity President, Vice Presidents, Committee Heads & Vice Heads) handles strategic planning, decision-making, and supervising committees.\n\n**Promotion Ladder** (earned by commitment & performance, not fixed time):\n1. Member\n2. Active Member\n3. Senior\n4. Vice Head (Lead)\n5. Head (Leader)"
+          : "الفرق بين الأعضاء والبورد:\n- **أعضاء اللجان (Members):** هم العمود الفقري التشغيلي للكيان اللي بينفذوا المهام وينظموا الأنشطة جوا لجانهم.\n- **البورد (The Board):** قيادة الكيان واللجان (رئيس الكيان، نواب الرئيس، وهيدز وفايسز اللجان)، ومسؤولين عن التخطيط الاستراتيجي وإدارة الفرق واتخاذ القرارات.\n\n**نظام الترقيات** (حسب الالتزام والأداء مش بمدة ثابتة):\n1. Member\n2. Active Member\n3. Senior\n4. Vice Head (Lead)\n5. Head (Leader)",
+      };
     }
 
     // 6. Eligibility (Who can join)
     if (
-      /(مين يقدر ينضم|مين يقدر يقدم|شروط الانضمام|الفئات المتاحه|ينفع اقدم|ينفع انضم|خريج|امتياز|معهد|معاهد|جامعه اهليه|جامعه تانيه|who can join|eligib|graduate|other universit)/.test(
-        norm
+      /^(مين يقدر ينضم( للكيان| لالكساندرز| لالكسندرز)?|مين يقدر يقدم( في الكيان| في الكساندرز| في الكسندرز)?|ايه (هي )?شروط الانضمام( للكيان| لالكساندرز| لالكسندرز)?|شروط الانضمام( للكيان| لالكساندرز| لالكسندرز)?|شروط التقديم( للكيان| لالكساندرز| لالكسندرز)?|الفئات المتاحه للانضمام)$/.test(
+        cleaned
+      ) ||
+      /^(who can join( alexanders( group)?)?|who is eligible( to join)?|what are the (eligibility )?requirements( to join)?|eligibility( requirements)?)$/.test(
+        cleaned
       )
     ) {
-      return isEn
-        ? "**Eligibility:** Open exclusively to undergraduate students in any faculty or academic year at **Alexandria University** or **Alexandria National University**.\n\n**Not Eligible:** Graduates, internship-year students (سنة الامتياز), institute students (المعاهد), or students from other universities."
-        : "**شروط الانضمام:**\n- **متاح حصرياً لـ:** جميع طلاب المرحلة الجامعية بأي كلية أو فرقة في **جامعة الإسكندرية** و **جامعة الإسكندرية الأهلية**.\n- **غير متاح لـ:** الخريجين، طلبة سنة الامتياز، طلاب المعاهد، أو طلاب الجامعات الأخرى.";
+      return {
+        isGreeting: false,
+        reply: isEn
+          ? "**Eligibility:** Open exclusively to undergraduate students in any faculty or academic year at **Alexandria University** or **Alexandria National University**.\n\n**Not Eligible:** Graduates, internship-year students (سنة الامتياز), institute students (المعاهد), or students from other universities."
+          : "**شروط الانضمام:**\n- **متاح حصرياً لـ:** جميع طلاب المرحلة الجامعية بأي كلية أو فرقة في **جامعة الإسكندرية** و **جامعة الإسكندرية الأهلية**.\n- **غير متاح لـ:** الخريجين، طلبة سنة الامتياز، طلاب المعاهد، أو طلاب الجامعات الأخرى.",
+      };
     }
 
     // 7. Committees List (6 Committees)
     if (
-      /(ايه هي لجان|ما هي لجان|اللجان|لجان الكيان|لجان الكساندرز|6 لجان|ست لجان|committees|what are the committees)/.test(
-        norm
+      /^(ايه هي |ما هي )?(لجان (الكيان|الكساندرز|الكسندرز|اليكساندرز)|اللجان( في الكيان| في الكساندرز| في الكسندرز| المتاحه)?|ال 6 لجان|الست لجان)$/.test(
+        cleaned
+      ) ||
+      /^(what are (the )?committees( in alexanders( group)?)?|alexanders( group)? committees|list (of )?committees|committees)$/.test(
+        cleaned
       )
     ) {
-      return isEn
-        ? "Alexanders operates through **6 integrated committees**:\n- **Organizing Committee (OC):** On-ground event management & logistics.\n- **Human Resources (HR):** Interviews, member tracking (HR Follower), & internal development.\n- **Public Relations (PR):** External partnerships, speakers, & sponsorships.\n- **Media (MD / ME):** Graphic Design, Video Editing & Montage, Photography/Videography, and Content Writing & Voiceover.\n- **Art / Handmade:** Recycling, Upcycling, eco-friendly projects, & event decor.\n- **Programming:** Technical support, websites, & digital solutions."
-        : "كيان **ألكساندرز** بيشتغل من خلال **6 لجان أساسية**:\n- **لجنة التنظيم (OC):** الإدارة الميدانية واللوجستيات وتنفيذ الإيفنتات على أرض الواقع.\n- **لجنة الموارد البشرية (HR):** الانترفيوهات، متابعة وتقييم الأعضاء (HR Follower)، وتوفير بيئة عمل صحية.\n- **لجنة العلاقات العامة (PR):** التواصل الخارجي، عقد الشراكات، وتأمين الرعايات.\n- **لجنة الميديا (Media):** التصميم الجرافيكي، المونتاج، التصوير، وكتابة المحتوى والفويس أوفر.\n- **اللجنة الفنية / الهاند ميد (Art / Handmade):** الاستدامة البيئية، إعادة التدوير (Recycling & Upcycling)، وديكورات الفعاليات.\n- **لجنة البرمجة (Programming):** الدعم التقني وتطوير المواقع والحلول البرمجية.";
+      return {
+        isGreeting: false,
+        reply: isEn
+          ? "Alexanders operates through **6 integrated committees**:\n- **Organizing Committee (OC):** On-ground event management & logistics.\n- **Human Resources (HR):** Interviews, member tracking (HR Follower), & internal development.\n- **Public Relations (PR):** External partnerships, speakers, & sponsorships.\n- **Media (MD / ME):** Graphic Design, Video Editing & Montage, Photography/Videography, and Content Writing & Voiceover.\n- **Art / Handmade:** Recycling, Upcycling, eco-friendly projects, & event decor.\n- **Programming:** Technical support, websites, & digital solutions."
+          : "كيان **ألكساندرز** بيشتغل من خلال **6 لجان أساسية**:\n- **لجنة التنظيم (OC):** الإدارة الميدانية واللوجستيات وتنفيذ الإيفنتات على أرض الواقع.\n- **لجنة الموارد البشرية (HR):** الانترفيوهات، متابعة وتقييم الأعضاء (HR Follower)، وتوفير بيئة عمل صحية.\n- **لجنة العلاقات العامة (PR):** التواصل الخارجي، عقد الشراكات، وتأمين الرعايات.\n- **لجنة الميديا (Media):** التصميم الجرافيكي، المونتاج، التصوير، وكتابة المحتوى والفويس أوفر.\n- **اللجنة الفنية / الهاند ميد (Art / Handmade):** الاستدامة البيئية، إعادة التدوير (Recycling & Upcycling)، وديكورات الفعاليات.\n- **لجنة البرمجة (Programming):** الدعم التقني وتطوير المواقع والحلول البرمجية.",
+      };
     }
 
     // 8. How to Apply / Member Form / After Form
     if (
-      /(ازاي اقدم|ازاي انضم|طريقه الانضمام|طريقه التقديم|عاوز اقدم|عاوز انضم|ابقي عضو|فورم التقديم|فورم العضويه|رابط التقديم|لينك التقديم|بعد ما املا الفورم|بعد الفورم|how to join|how do i apply|how to apply|application form|join form|after i fill|after submitting)/.test(
-        norm
+      /^(ازاي اقدم( في الكيان| في الكساندرز| في الكسندرز)?|ازاي انضم( للكيان| لالكساندرز| لالكسندرز)?|طريقه (التقديم|الانضمام)( للكيان| لالكساندرز| لالكسندرز)?|عايز (اقدم|انضم)|عاوز (اقدم|انضم)|فورم (التقديم|العضويه)|لينك (التقديم|الفورم)|رابط (التقديم|الفورم)|ايه اللي بيحصل بعد ما املا الفورم|بعد ما املا الفورم ايه اللي بيحصل)$/.test(
+        cleaned
+      ) ||
+      /^(how (do i |to )?(apply|join)( alexanders( group)?)?|application form|join form|member(ship)? form|what happens after i (fill|submit) the form)$/.test(
+        cleaned
       )
     ) {
-      return isEn
-        ? `To join as a Committee Member:\n1. Fill out the Member Application Form:\n${MEMBER_FORM_URL}\n2. An HR team member will contact you via WhatsApp to schedule your interview time and location.\n3. Pass the committee interview to join as a Member!`
-        : `خطوات الانضمام لعضوية اللجان في ألكساندرز:\n1. املا فورم التقديم كـ عضو:\n${MEMBER_FORM_URL}\n2. هيتواصل معاك مسؤول من لجنة الـ HR على واتساب لتحديد ميعاد ومكان الانترفيو.\n3. بعد اجتياز المقابلة، بتنضم للجنة بصفة Member!`;
+      return {
+        isGreeting: false,
+        reply: isEn
+          ? `To join as a Committee Member:\n1. Fill out the Member Application Form:\n${MEMBER_FORM_URL}\n2. An HR team member will contact you via WhatsApp to schedule your interview time and location.\n3. Pass the committee interview to join as a Member!`
+          : `خطوات الانضمام لعضوية اللجان في ألكساندرز:\n1. املا فورم التقديم كـ عضو:\n${MEMBER_FORM_URL}\n2. هيتواصل معاك مسؤول من لجنة الـ HR على واتساب لتحديد ميعاد ومكان الانترفيو.\n3. بعد اجتياز المقابلة، بتنضم للجنة بصفة Member!`,
+      };
     }
 
     // 9. Free Activities, Certificates & Transportation Allowances
     if (
-      /(مجاني|مجانا|بفلوس|فلوس|رسوم|اشتراك|شهاده|شهادات|بدل انتقال|بدلات|are courses free|is it free|free of charge|cost|fees|certificate|allowance)/.test(
-        norm
+      /^(هل )?(الكيان |النشاط |الانشطه |الكورسات |التدريبات |الاشتراك )?(مجاني|مجانيه|مجانا|بفلوس|في رسوم|فيه رسوم|في اشتراك|فيه اشتراك)$/.test(
+        cleaned
+      ) ||
+      /^(الانشطه مجانيه|الكورسات مجانيه|هل في شهادات|هل فيه شهادات)$/.test(cleaned) ||
+      /^(is it free|are (the )?(activities|courses|workshops|events|trainings) free|are there any fees|do you (give|provide) certificates)$/.test(
+        cleaned
       )
     ) {
-      return isEn
-        ? "Yes! **100% of our activities, trainings, courses, workshops, sessions, and trips are completely free.** Most trainings include accredited certificates, and field visits often include transportation allowances."
-        : "أيوه، **100% من الأنشطة، الكورسات، التدريبات، الورش، السيشنز، والرحلات مجانية بالكامل** بدون أي رسوم! وكمان معظم التدريبات بتقدم شهادات معتمدة، وكتير من الزيارات الميدانية بيكون فيها بدلات انتقال.";
+      return {
+        isGreeting: false,
+        reply: isEn
+          ? "Yes! **100% of our activities, trainings, courses, workshops, sessions, and trips are completely free.** Most trainings include accredited certificates, and field visits often include transportation allowances."
+          : "أيوه، **100% من الأنشطة، الكورسات، التدريبات، الورش، السيشنز، والرحلات مجانية بالكامل** بدون أي رسوم! وكمان معظم التدريبات بتقدم شهادات معتمدة، وكتير من الزيارات الميدانية بيكون فيها بدلات انتقال.",
+      };
     }
 
     // 10. Studies, Exams & Attendance Policy
     if (
-      /(مذاكره|امتحان|امتحانات|حضور يومي|هياثر علي الدراسه|تعارض|affect my studies|study|exam|attendance)/.test(
-        norm
+      /^(هل )?(الانضمام |الكيان |النشاط )?(هياثر علي (المذاكره|الدراسه|الكليه)|بياثر علي (المذاكره|الدراسه|الكليه)|في حضور يومي|فيه حضور يومي|الحضور يومي)$/.test(
+        cleaned
+      ) ||
+      /^(will (it|joining) affect my studies|does (it|joining) affect my studies|is attendance daily|do i have to attend daily)$/.test(
+        cleaned
       )
     ) {
-      return isEn
-        ? "Not at all! We don't require constant daily presence on campus, and we fully respect university schedules, exams, and personal circumstances as long as you communicate with your assigned HR Follower."
-        : "أبداً، الانضمام مش بيأثر على المذاكرة أو الكلية! الحضور مش يومي، وفيه مرونة وتفهم كامل لمواعيد الجامعة والامتحانات والظروف الشخصية طالما فيه التزام بالمهام وتواصل مع الـ **HR Follower** الخاص بك.";
+      return {
+        isGreeting: false,
+        reply: isEn
+          ? "Not at all! We don't require constant daily presence on campus, and we fully respect university schedules, exams, and personal circumstances as long as you communicate with your assigned HR Follower."
+          : "أبداً، الانضمام مش بيأثر على المذاكرة أو الكلية! الحضور مش يومي، وفيه مرونة وتفهم كامل لمواعيد الجامعة والامتحانات والظروف الشخصية طالما فيه التزام بالمهام وتواصل مع الـ **HR Follower** الخاص بك.",
+      };
     }
 
     // 11. About Alexanders Group (What is Alexanders)
     if (
-      /(ايه هو كيان|ايه هي جماعه|مين انتم|عن الكيان|عن الكساندرز|هدف الكيان|رؤيه الكيان|what is alexanders|about alexanders|alexanders group)/.test(
-        norm
+      /^(ايه هو (كيان )?(الكساندرز|الكسندرز|اليكساندرز)|ايه هي جماعه (الكساندرز|الكسندرز|اليكساندرز)|مين انتم|مين انتو|عرفني (علي |عن )?(الكيان|الكساندرز|الكسندرز)|نبذه عن (الكيان|الكساندرز|الكسندرز))$/.test(
+        cleaned
+      ) ||
+      /^(what is alexanders( group)?|who are you|about alexanders( group)?|tell me about alexanders( group)?)$/.test(
+        cleaned
       )
     ) {
-      return isEn
-        ? `**Alexanders Group** ("Together for a Sustainable Alexandria") is an official student entity under the General Administration of Youth Welfare (Student Families Department) at Alexandria University. More than just organizing events, our core mission is spreading **Sustainable Development** into real initiatives and bridging the gap between university life and the job market through free courses, workshops, events, and trips.`
-        : `**جماعة أليكساندرز (Alexanders Group)** تحت شعار "معاً من أجل إسكندرية مستدامة" هو كيان طلابي رسمي تابع للإدارة العامة لرعاية الشباب (إدارة الأسر الطلابية) بجامعة الإسكندرية.\nألكساندرز مش مجرد نشاط طلابي بينظم إيفنتات عشوائية، هويته الأساسية هي نشر مفهوم **التنمية المستدامة** وتحويله لمبادرات ومشاريع عملية وأثر مجتمعي حقيقي، مع سد الفجوة بين الدراسة وسوق العمل بتدريبات وأنشطة مجانية 100%.`;
+      return {
+        isGreeting: false,
+        reply: isEn
+          ? `**Alexanders Group** ("Together for a Sustainable Alexandria") is an official student entity under the General Administration of Youth Welfare (Student Families Department) at Alexandria University. More than just organizing events, our core mission is spreading **Sustainable Development** into real initiatives and bridging the gap between university life and the job market through free courses, workshops, events, and trips.`
+          : `**جماعة أليكساندرز (Alexanders Group)** تحت شعار "معاً من أجل إسكندرية مستدامة" هو كيان طلابي رسمي تابع للإدارة العامة لرعاية الشباب (إدارة الأسر الطلابية) بجامعة الإسكندرية.\nألكساندرز مش مجرد نشاط طلابي بينظم إيفنتات عشوائية، هويته الأساسية هي نشر مفهوم **التنمية المستدامة** وتحويله لمبادرات ومشاريع عملية وأثر مجتمعي حقيقي، مع سد الفجوة بين الدراسة وسوق العمل بتدريبات وأنشطة مجانية 100%.`,
+      };
     }
 
     // 12. Official Social Media Links & Video
     if (
-      /(سوشيال ميديا|صفحات|فيسبوك|انستجرام|تيك توك|لينكد ان|يوتيوب|فيديو تعريفي|social media|facebook|instagram|tiktok|linkedin|youtube|contact|intro video)/.test(
-        norm
+      /^(صفحات (الكيان|الكساندرز|الكسندرز)|السوشيال ميديا|لينكات (السوشيال ميديا|التواصل)|روابط (السوشيال ميديا|التواصل)|صفحه (الفيسبوك|الفيس|الانستجرام|الانستا)|ازاي اتواصل معاكم|طرق التواصل|الفيديو التعريفي)$/.test(
+        cleaned
+      ) ||
+      /^(social media( links)?|official (pages|links|channels)|contact( info| us)?|facebook( page| link)?|instagram( page| link)?|intro video)$/.test(
+        cleaned
       )
     ) {
-      return isEn
-        ? `Official Alexanders Group channels:\n- Facebook: ${FB_URL}\n- Instagram: ${IG_URL}\n- LinkedIn: ${LINKEDIN_URL}\n- TikTok: ${TIKTOK_URL}\n- YouTube: ${YOUTUBE_URL}\n- Intro Video: ${INTRO_VIDEO_URL}`
-        : `الصفحات الرسمية لكيان ألكساندرز:\n- فيسبوك: ${FB_URL}\n- إنستجرام: ${IG_URL}\n- لينكد إن: ${LINKEDIN_URL}\n- تيك توك: ${TIKTOK_URL}\n- يوتيوب: ${YOUTUBE_URL}\n- الفيديو التعريفي: ${INTRO_VIDEO_URL}`;
+      return {
+        isGreeting: false,
+        reply: isEn
+          ? `Official Alexanders Group channels:\n- Facebook: ${FB_URL}\n- Instagram: ${IG_URL}\n- LinkedIn: ${LINKEDIN_URL}\n- TikTok: ${TIKTOK_URL}\n- YouTube: ${YOUTUBE_URL}\n- Intro Video: ${INTRO_VIDEO_URL}`
+          : `الصفحات الرسمية لكيان ألكساندرز:\n- فيسبوك: ${FB_URL}\n- إنستجرام: ${IG_URL}\n- لينكد إن: ${LINKEDIN_URL}\n- تيك توك: ${TIKTOK_URL}\n- يوتيوب: ${YOUTUBE_URL}\n- الفيديو التعريفي: ${INTRO_VIDEO_URL}`,
+      };
     }
 
     return null;
   }
 
-  async function sendMessage(rawText) {
+  async function sendMessage(rawText, options = {}) {
+    const { fromFaqChip = false } = options;
     const userText = (rawText || "").trim();
     if (!userText || isBusy) return;
 
-    // Instant, zero-auth FAQ reply when matched
-    const faqReply = matchFaqReply(userText);
-    if (faqReply) {
-      hideAuthPrompt();
-      pendingMessage = null;
-      appendMessage("user", userText);
-      if (dom.input) dom.input.value = "";
-      appendMessage("assistant", faqReply);
+    // Instant, zero-auth FAQ reply strictly for signed-out users on exact FAQ matches or FAQ chips
+    if (!isUserSignedIn()) {
+      const faqMatch = matchFaqReply(userText, {
+        fromFaqChip,
+        allowTopicalFaq: fromFaqChip || !hasTopicalHistory,
+      });
+      if (faqMatch) {
+        hideAuthPrompt();
+        setFaqCollapsed(true);
+        pendingMessage = null;
+        appendMessage("user", userText);
+        if (dom.input) dom.input.value = "";
+        appendMessage("assistant", faqMatch.reply);
 
-      conversationHistory.push({ role: "user", content: userText });
-      conversationHistory.push({ role: "assistant", content: faqReply });
-      if (conversationHistory.length > MAX_HISTORY_MESSAGES) {
-        conversationHistory = conversationHistory.slice(-MAX_HISTORY_MESSAGES);
+        conversationHistory.push({ role: "user", content: userText });
+        conversationHistory.push({ role: "assistant", content: faqMatch.reply });
+        if (!faqMatch.isGreeting) {
+          hasTopicalHistory = true;
+        }
+        if (conversationHistory.length > MAX_HISTORY_MESSAGES) {
+          conversationHistory = conversationHistory.slice(-MAX_HISTORY_MESSAGES);
+        }
+
+        if (dom.input) dom.input.focus();
+        scrollToBottom();
+        return;
       }
-
-      if (dom.input) dom.input.focus();
-      scrollToBottom();
-      return;
     }
 
     if (!isPuterAvailable()) {
@@ -711,12 +813,14 @@
 
     // User-Pays gate: check auth before calling Puter AI
     if (!isUserSignedIn()) {
+      setFaqCollapsed(true);
       pendingMessage = userText;
       showAuthPrompt();
       return;
     }
 
     hideAuthPrompt();
+    setFaqCollapsed(true);
     const activeNonce = sessionNonce;
 
     appendMessage("user", userText);
@@ -776,6 +880,7 @@
 
       conversationHistory.push({ role: "user", content: userText });
       conversationHistory.push({ role: "assistant", content: finalReply });
+      hasTopicalHistory = true;
       if (conversationHistory.length > MAX_HISTORY_MESSAGES) {
         conversationHistory = conversationHistory.slice(-MAX_HISTORY_MESSAGES);
       }
@@ -868,7 +973,21 @@
           </div>
         </div>
 
-        <div id="alexChatChips" class="alex-chat-chips" aria-label="أسئلة سريعة"></div>
+        <div id="alexChatFaqBox" class="alex-chat-faq-box">
+          <button
+            type="button"
+            id="alexChatFaqToggle"
+            class="alex-chat-faq-toggle"
+            aria-expanded="true"
+            aria-controls="alexChatChips"
+          >
+            <span>الأسئلة الشائعة (FAQ)</span>
+            <svg class="alex-chat-faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+          <div id="alexChatChips" class="alex-chat-chips" aria-label="أسئلة سريعة"></div>
+        </div>
 
         <div class="alex-chat-input-bar">
           <form id="alexChatForm" class="alex-chat-form">
@@ -916,6 +1035,8 @@
     dom.authError = document.getElementById("alexChatAuthError");
     dom.signInBtn = document.getElementById("alexChatSignInBtn");
     dom.authDismissBtn = document.getElementById("alexChatAuthDismiss");
+    dom.faqBox = document.getElementById("alexChatFaqBox");
+    dom.faqToggle = document.getElementById("alexChatFaqToggle");
     dom.chips = document.getElementById("alexChatChips");
     dom.form = document.getElementById("alexChatForm");
     dom.input = document.getElementById("alexChatInput");
@@ -929,7 +1050,7 @@
       chip.textContent = question;
       chip.addEventListener("click", () => {
         if (isBusy) return;
-        sendMessage(question);
+        sendMessage(question, { fromFaqChip: true });
       });
       dom.chips.appendChild(chip);
     });
@@ -961,6 +1082,10 @@
     });
 
     dom.clearBtn?.addEventListener("click", resetChat);
+    dom.faqToggle?.addEventListener("click", () => {
+      const currentlyCollapsed = dom.faqBox?.classList.contains("alex-chat-faq-collapsed");
+      setFaqCollapsed(!currentlyCollapsed);
+    });
     dom.authPill?.addEventListener("click", handleSignInClick);
     dom.signInBtn?.addEventListener("click", handleSignInClick);
     dom.authDismissBtn?.addEventListener("click", () => {
