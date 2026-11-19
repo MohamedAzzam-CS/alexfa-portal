@@ -1,5 +1,5 @@
 // ==============================================================================
-// Alexanders AI Assistant - Clean Client connected to Cloudflare Worker
+// Alexanders AI Assistant - Dual-Mode Client (Instant JSON + Live SSE Streaming)
 // ==============================================================================
 (function () {
   const CHAT_API_ENDPOINT = "https://alexanders-ai-api.sci-mohamedelsayed32561.workers.dev/";
@@ -120,6 +120,7 @@
       if (sendBtn) sendBtn.disabled = true;
 
       const assistantMsgElem = appendMessage("assistant", "...");
+      const contentEl = assistantMsgElem.querySelector(".ai-message-content");
       const startTime = performance.now();
       if (latencyBadge) latencyBadge.textContent = "⏳ جاري المعالجة...";
 
@@ -139,19 +140,68 @@
           signal: controller.signal,
         });
 
-        clearTimeout(timeoutId);
-        const rttMs = Math.round(performance.now() - startTime);
-        if (latencyBadge) latencyBadge.textContent = `⚡ ${rttMs}ms`;
-
         if (!res.ok) {
+          clearTimeout(timeoutId);
           const errData = await res.json().catch(() => ({}));
           throw new Error(errData.error || `HTTP ${res.status}`);
         }
 
-        const data = await res.json();
-        const replyText = data.reply?.trim() || "عذرًا، لم أتمكن من الحصول على رد.";
+        const contentType = res.headers.get("content-type") || "";
+        let replyText = "";
 
-        assistantMsgElem.querySelector(".ai-message-content").innerHTML = formatReply(replyText);
+        if (contentType.includes("text/event-stream") && res.body) {
+          // Live SSE Streaming Mode
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder("utf-8");
+          let buffer = "";
+          let gotFirstToken = false;
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || "";
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed.startsWith("data:")) continue;
+              const dataStr = trimmed.slice(5).trim();
+              if (!dataStr || dataStr === "[DONE]") continue;
+
+              try {
+                const parsed = JSON.parse(dataStr);
+                if (parsed.token) {
+                  if (!gotFirstToken) {
+                    gotFirstToken = true;
+                    clearTimeout(timeoutId);
+                    const ttftMs = Math.round(performance.now() - startTime);
+                    if (latencyBadge) latencyBadge.textContent = `⚡ TTFT ${ttftMs}ms`;
+                  }
+                  replyText += parsed.token;
+                  contentEl.innerHTML = formatReply(replyText);
+                  scrollToBottom();
+                }
+              } catch {
+                // Ignore partial SSE JSON frames
+              }
+            }
+          }
+
+          clearTimeout(timeoutId);
+          replyText = replyText.trim() || "عذرًا، لم أتمكن من الحصول على رد.";
+          contentEl.innerHTML = formatReply(replyText);
+        } else {
+          // Instant JSON Mode (Regex, Exact Cache, Semantic Cache, or Short Fact)
+          clearTimeout(timeoutId);
+          const rttMs = Math.round(performance.now() - startTime);
+          if (latencyBadge) latencyBadge.textContent = `⚡ ${rttMs}ms`;
+
+          const data = await res.json();
+          replyText = data.reply?.trim() || "عذرًا، لم أتمكن من الحصول على رد.";
+          contentEl.innerHTML = formatReply(replyText);
+        }
 
         chatHistory.push({ role: "user", text: userText });
         chatHistory.push({ role: "assistant", text: replyText });
@@ -162,7 +212,7 @@
             ? "انتهت مهلة الانتظار. يرجى المحاولة مرة أخرى."
             : err.message || "حدث خطأ غير متوقع.";
 
-        assistantMsgElem.querySelector(".ai-message-content").innerHTML = `<span style="color:#ef4444;">⚠️ ${escapeHtml(msg)}</span>`;
+        contentEl.innerHTML = `<span style="color:#ef4444;">⚠️ ${escapeHtml(msg)}</span>`;
       } finally {
         input.disabled = false;
         if (sendBtn) sendBtn.disabled = false;
