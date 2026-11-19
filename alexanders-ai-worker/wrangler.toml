@@ -11,3 +11,8 @@ binding = "AI"
 [[kv_namespaces]]
 binding = "CMS_KV"
 id = "b497b48523404106bdebcba0bba4bed5"
+
+[[d1_databases]]
+binding = "USERS_DB"
+database_name = "alexanders-users-db"
+database_id = "df8ce8b1-5a1d-4eb5-a802-cbe33818114f"

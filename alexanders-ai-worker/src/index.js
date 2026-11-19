@@ -6,6 +6,7 @@ import { routeMessage } from "./pipeline/router.js";
 import { generateResponse, generateStreamResponse } from "./pipeline/responder.js";
 import { embedText } from "./utils/vector.js";
 import { handleAdminSync } from "./admin/sync.js";
+import { handleSaveUser, handleListUsers } from "./admin/users.js";
 
 export default {
   async fetch(request, env, ctx) {
@@ -19,6 +20,14 @@ export default {
 
     if (request.method === "POST" && url.pathname === "/admin/sync") {
       return handleAdminSync(request, env, corsHeaders);
+    }
+
+    if (request.method === "POST" && url.pathname === "/users") {
+      return handleSaveUser(request, env, corsHeaders);
+    }
+
+    if (request.method === "GET" && url.pathname === "/admin/users") {
+      return handleListUsers(request, env, corsHeaders);
     }
 
     if (request.method !== "POST") {

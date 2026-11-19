@@ -4,14 +4,16 @@ const ADVISOR_ANCHORS = [
   "انصحني اختار اي لجنة مناسبة ليا ولمهاراتي وميولي",
   "ازاي استعد للانترفيو وايه الاسئلة اللي بتتسأل في المقابلة",
   "محتار بين اللجان ومش عارف اقدم على ايه",
+  "Which committee fits my skills and interests, and how do I prepare for the interview?",
 ];
 
 const TEMP_ANCHORS = [
   "امتى معاد التقديم والانترفيو والديدلاين",
   "ايه الايفنتات والكورسات والاعلانات الحالية دلوقتي",
+  "When is the recruitment deadline, interview date, or upcoming event schedule?",
 ];
 
-const LONG_SECTIONS = new Set(["SEC_04", "SEC_05"]);
+const LONG_SECTIONS = new Set(["SEC_04", "SEC_05", "SEC_07", "SEC_08"]);
 
 // Isolate-level cache: { version, sections: [{ id, vec }], advisorVecs, tempVecs }
 let routerVecCache = null;

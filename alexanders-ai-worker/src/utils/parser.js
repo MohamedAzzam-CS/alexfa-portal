@@ -3,9 +3,15 @@ export function parseMarkdownKb(markdown) {
     throw new Error("Markdown content must be a non-empty string.");
   }
 
-  // Split on level-2 headings (## ...) at the start of a line
-  const rawBlocks = markdown
-    .replace(/\r\n/g, "\n")
+  const normalized = markdown.replace(/\r\n/g, "\n");
+  const firstHeading = normalized.match(/^##\s+/m);
+  if (!firstHeading) {
+    throw new Error("No '## ' sections found in Markdown document.");
+  }
+
+  // Split on level-2 headings (## ...) starting from the first heading so any preamble is ignored
+  const rawBlocks = normalized
+    .slice(firstHeading.index)
     .split(/^##\s+/m)
     .map((b) => b.trim())
     .filter(Boolean);
