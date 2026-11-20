@@ -25,11 +25,27 @@
     "https://docs.google.com/forms/d/e/1FAIpQLScY4IYRtpvghlAck38xeE72-Eyg6BYa17IwbbsurNm_XRSfmA/viewform";
 
   const QUICK_CHIPS = [
+    "إيه هو كيان ألكساندرز؟",
     "إيه هي لجان ألكسندرز؟",
     "مين يقدر ينضم للكيان؟",
+    "إزاي أقدم؟",
     "إيه الفرق بين Member و General Member؟",
     "إيه الفرق بين الأعضاء والبورد؟",
-    "إزاي أقدم؟",
+    "هل الأنشطة والكورسات مجانية؟",
+    "هل الانضمام بيأثر على الدراسة؟",
+    "إيه دور لجنة التنظيم OC؟",
+    "إيه دور لجنة الـ HR؟",
+    "إيه دور لجنة العلاقات العامة PR؟",
+    "إيه دور لجنة الميديا Media؟",
+    "إيه دور اللجنة الفنية والهاند ميد؟",
+    "إيه دور لجنة البرمجة Programming؟",
+    "إيه نظام الـ HR Follower والإنذارات؟",
+    "إيه أبرز إيفنتات وإنجازات الكيان؟",
+    "مين شركاء كيان ألكساندرز؟",
+    "الكيان تابع لمين ومكانه فين؟",
+    "إمتى ميعاد التقديم؟",
+    "إزاي أقدم على البورد؟",
+    "إيه صفحات التواصل الرسمية؟",
   ];
 
   const WELCOME_MESSAGE =
@@ -772,7 +788,7 @@
 
     // 9. Free Activities, Certificates & Transportation Allowances
     if (
-      /^(هل )?(الكيان |النشاط |الانشطه |الكورسات |التدريبات |الاشتراك )?(مجاني|مجانيه|مجانا|بفلوس|في رسوم|فيه رسوم|في اشتراك|فيه اشتراك)$/.test(
+      /^(هل )?(الكيان |النشاط |الانشطه |الكورسات |التدريبات |الاشتراك |الانشطه والكورسات |الكورسات والانشطه |الايفنتات والكورسات )?(مجاني|مجانيه|مجانا|بفلوس|في رسوم|فيه رسوم|في اشتراك|فيه اشتراك)$/.test(
         cleaned
       ) ||
       /^(الانشطه مجانيه|الكورسات مجانيه|هل في شهادات|هل فيه شهادات)$/.test(cleaned) ||
@@ -807,10 +823,10 @@
 
     // 11. About Alexanders Group (What is Alexanders)
     if (
-      /^(ايه هو (كيان )?(الكساندرز|الكسندرز|اليكساندرز)|ايه هي جماعه (الكساندرز|الكسندرز|اليكساندرز)|مين انتم|مين انتو|عرفني (علي |عن )?(الكيان|الكساندرز|الكسندرز)|نبذه عن (الكيان|الكساندرز|الكسندرز))$/.test(
+      /^(ايه هو (كيان )?(الكساندرز|الكسندرز|اليكساندرز)|ايه هي جماعه (الكساندرز|الكسندرز|اليكساندرز)|مين انتم|مين انتو|عرفني (علي |عن )?(الكيان|الكساندرز|الكسندرز)|نبذه عن (الكيان|الكساندرز|الكسندرز)|ايه هدف الكيان|ايه رؤيه الكيان)$/.test(
         cleaned
       ) ||
-      /^(what is alexanders( group)?|who are you|about alexanders( group)?|tell me about alexanders( group)?)$/.test(
+      /^(what is alexanders( group)?|who are you|about alexanders( group)?|tell me about alexanders( group)?|what is your (mission|vision))$/.test(
         cleaned
       )
     ) {
@@ -824,7 +840,7 @@
 
     // 12. Official Social Media Links & Video
     if (
-      /^(صفحات (الكيان|الكساندرز|الكسندرز)|السوشيال ميديا|لينكات (السوشيال ميديا|التواصل)|روابط (السوشيال ميديا|التواصل)|صفحه (الفيسبوك|الفيس|الانستجرام|الانستا)|ازاي اتواصل معاكم|طرق التواصل|الفيديو التعريفي)$/.test(
+      /^(ايه )?(صفحات (الكيان|الكساندرز|الكسندرز|التواصل|التواصل الرسميه)|الصفحات الرسميه|السوشيال ميديا|لينكات (السوشيال ميديا|التواصل)|روابط (السوشيال ميديا|التواصل)|صفحه (الفيسبوك|الفيس|الانستجرام|الانستا)|ازاي اتواصل معاكم|طرق التواصل|الفيديو التعريفي)$/.test(
         cleaned
       ) ||
       /^(social media( links)?|official (pages|links|channels)|contact( info| us)?|facebook( page| link)?|instagram( page| link)?|intro video)$/.test(
@@ -836,6 +852,176 @@
         reply: isEn
           ? `Official Alexanders Group channels:\n- [our_facebook](${FB_URL})\n- [our_instagram](${IG_URL})\n- [our_linkedin](${LINKEDIN_URL})\n- [our_tiktok](${TIKTOK_URL})\n- [our_youtube](${YOUTUBE_URL})\n- [our_intro_video](${INTRO_VIDEO_URL})`
           : `الصفحات الرسمية لكيان ألكساندرز:\n- [our_facebook](${FB_URL})\n- [our_instagram](${IG_URL})\n- [our_linkedin](${LINKEDIN_URL})\n- [our_tiktok](${TIKTOK_URL})\n- [our_youtube](${YOUTUBE_URL})\n- [our_intro_video](${INTRO_VIDEO_URL})`,
+      };
+    }
+
+    // 13. Organizing Committee (OC)
+    if (
+      /^(ايه )?(دور |مهام |تفاصيل |عن )?(لجنه التنظيم( oc)?|لجنه ال oc|لجنه oc|oc committee)$/.test(
+        cleaned
+      ) ||
+      /^(what (is|does) (the )?(oc|organizing committee)( do| role)?|tell me about (oc|organizing committee))$/.test(
+        cleaned
+      )
+    ) {
+      return {
+        isGreeting: false,
+        reply: isEn
+          ? "**Organizing Committee (OC - لجنة التنظيم):**\n- **Role:** Field management and logistics — planning, organizing, and executing events, conferences, and trips on the ground, maintaining order, and handling unexpected on-site situations quickly.\n- **Ideal Traits:** Strong organization skills, quick problem-solving, working well under pressure, teamwork, and high on-ground energy."
+          : "**لجنة التنظيم (Organizing Committee - OC):**\n- **الدور والمهام:** الإدارة الميدانية واللوجستيات؛ مسؤولة عن تخطيط وتنظيم وتنفيذ الإيفنتات والمؤتمرات والرحلات على أرض الواقع، وحفظ النظام، والتعامل السريع والهادئ مع أي مواقف طارئة.\n- **المهارات المطلوبة:** مهارات تنظيمية قوية، سرعة حل المشكلات، العمل تحت ضغط، روح الفريق، والنشاط الميداني.",
+      };
+    }
+
+    // 14. Human Resources Committee (HR)
+    if (
+      /^(ايه )?(دور |مهام |تفاصيل |عن )?(لجنه الموارد البشريه( hr)?|لجنه ال hr|لجنه hr|ال hr|hr committee)$/.test(
+        cleaned
+      ) ||
+      /^(what (is|does) (the )?(hr|human resources)( committee)?( do| role)?|tell me about (hr|human resources)( committee)?)$/.test(
+        cleaned
+      )
+    ) {
+      return {
+        isGreeting: false,
+        reply: isEn
+          ? "**Human Resources Committee (HR - لجنة الموارد البشرية):**\n- **Role:** People management and internal development — running recruitment interviews, tracking and evaluating member performance, maintaining a healthy team environment, and assigning an **HR Follower** to support each member.\n- **Ideal Traits:** Good communication, active listening, objectivity, fairness, empathy, and follow-up skills."
+          : "**لجنة الموارد البشرية (Human Resources - HR):**\n- **الدور والمهام:** إدارة الأفراد والتطوير الداخلي؛ مسؤولة عن مقابلات التقديم (Interviews)، متابعة وتقييم أداء الأعضاء، توفير بيئة عمل صحية، وتخصيص **HR Follower** لدعم كل عضو.\n- **المهارات المطلوبة:** التواصل الفعال، الاستماع الجيد، الموضوعية والحيادية، التعاطف، والقدرة على المتابعة وحل المشكلات.",
+      };
+    }
+
+    // 15. Public Relations Committee (PR)
+    if (
+      /^(ايه )?(دور |مهام |تفاصيل |عن )?(لجنه العلاقات العامه( pr)?|لجنه ال pr|لجنه pr|ال pr|pr committee)$/.test(
+        cleaned
+      ) ||
+      /^(what (is|does) (the )?(pr|public relations)( committee)?( do| role)?|tell me about (pr|public relations)( committee)?)$/.test(
+        cleaned
+      )
+    ) {
+      return {
+        isGreeting: false,
+        reply: isEn
+          ? "**Public Relations Committee (PR - لجنة العلاقات العامة):**\n- **Role:** Official external representation — communicating with external institutions, speakers, and sponsors, building strategic partnerships, and securing sponsorships.\n- **Ideal Traits:** Strong negotiation and persuasion skills, confidence, formal communication etiquette, networking, and representing Alexanders professionally."
+          : "**لجنة العلاقات العامة (Public Relations - PR):**\n- **الدور والمهام:** التمثيل الرسمي والتواصل الخارجي؛ مسؤولة عن التواصل مع الجهات والمؤسسات الخارجية والمتحدثين والرعاة، وبناء الشراكات الاستراتيجية، وتأمين الرعايات للكيان.\n- **المهارات المطلوبة:** مهارات التفاوض والإقناع، الثقة بالنفس، لباقة التواصل الرسمي، وبناء العلاقات (Networking).",
+      };
+    }
+
+    // 16. Media Committee (MD / ME)
+    if (
+      /^(ايه )?(دور |مهام |تفاصيل |اقسام |تراكات |عن )?(لجنه الميديا( والاعلام)?( media)?|لجنه الاعلام|لجنه ال media|لجنه media|الميديا|media committee)$/.test(
+        cleaned
+      ) ||
+      /^(what (is|does) (the )?media( committee)?( do| role)?|tell me about (the )?media( committee)?|media tracks)$/.test(
+        cleaned
+      )
+    ) {
+      return {
+        isGreeting: false,
+        reply: isEn
+          ? "**Media Committee (MD / ME - لجنة الميديا والإعلام):**\n- **Role:** Digital production, content creation, and visual identity covering events and managing online presence.\n- **4 Sub-tracks:**\n  1. **Graphic Design**\n  2. **Video Editing & Montage**\n  3. **Photography & Videography**\n  4. **Content Writing, Copywriting & Voiceover**\n- **Ideal Traits:** Creativity, visual sense, familiarity with design/editing/camera tools, or strong creative writing and storytelling."
+          : "**لجنة الميديا والإعلام (Media Committee):**\n- **الدور والمهام:** الإنتاج الرقمي وصناعة المحتوى والهوية البصرية وتغطية الفعاليات.\n- **الأقسام الفرعية (4 تراكات):**\n  1. **التصميم الجرافيكي (Graphic Design)**\n  2. **المونتاج وتحرير الفيديو (Video Editing & Montage)**\n  3. **التصوير والتوثيق المرئي (Photography & Videography)**\n  4. **كتابة المحتوى والفويس أوفر (Content Writing & Voiceover)**\n- **المهارات المطلوبة:** حس إبداعي وبصري، معرفة أساسية أو متوسطة بأدوات التصميم/المونتاج/التصوير، أو مهارة في الكتابة الإبداعية والسرد.",
+      };
+    }
+
+    // 17. Art / Handmade Committee
+    if (
+      /^(ايه )?(دور |مهام |تفاصيل |عن )?(اللجنه الفنيه( والهاند ميد)?|لجنه الهاند ميد|لجنه الفن|الفنيه والهاند ميد|الهاند ميد|art committee|handmade committee)$/.test(
+        cleaned
+      ) ||
+      /^(what (is|does) (the )?(art|handmade|art and handmade)( committee)?( do| role)?|tell me about (the )?(art|handmade)( committee)?)$/.test(
+        cleaned
+      )
+    ) {
+      return {
+        isGreeting: false,
+        reply: isEn
+          ? "**Art / Handmade Committee (اللجنة الفنية / الهاند ميد):**\n- **Role:** Environmental sustainability through creative arts, **Recycling**, **Upcycling**, eco-friendly projects, and designing/executing event decorations.\n- **Ideal Traits:** Passion for handmade crafts, creativity, interest in environmental sustainability and recycling, and attention to artistic detail."
+          : "**اللجنة الفنية / الهاند ميد (Art / Handmade Committee):**\n- **الدور والمهام:** ركيزة أساسية في هوية ألكساندرز البيئية؛ بتركز على الاستدامة البيئية، **إعادة التدوير (Recycling)**، **إعادة الاستخدام الإبداعي للخامات (Upcycling)**، تقليل المخلفات، وتصميم وتنفيذ ديكورات الفعاليات.\n- **المهارات المطلوبة:** شغف بالأعمال اليدوية والفنية، الإبداع، الاهتمام بالاستدامة البيئية وإعادة التدوير، والدقة الفنية.",
+      };
+    }
+
+    // 18. Programming Committee
+    if (
+      /^(ايه )?(دور |مهام |تفاصيل |عن )?(لجنه البرمجه( programming)?|البرمجه|لجنه ال programming|programming committee)$/.test(
+        cleaned
+      ) ||
+      /^(what (is|does) (the )?programming( committee)?( do| role)?|tell me about (the )?programming( committee)?)$/.test(
+        cleaned
+      )
+    ) {
+      return {
+        isGreeting: false,
+        reply: isEn
+          ? "**Programming Committee (لجنة البرمجة):**\n- **Role:** Technical support and software/web development — building and maintaining websites, digital tools, platforms, and tech infrastructure for the entity and its events.\n- **Ideal Traits:** Interest or background in web development, programming languages, and problem-solving (open to both enthusiastic learners and experienced student developers)."
+          : "**لجنة البرمجة (Programming Committee):**\n- **الدور والمهام:** الدعم التقني وتطوير البرمجيات والمواقع؛ مسؤولة عن بناء وتطوير المواقع الإلكترونية، الأدوات التقنية، والمنصات الرقمية الخاصة بالكيان وفعالياته.\n- **المهارات المطلوبة:** شغف أو خلفية في تطوير الويب ولغات البرمجة وحل المشكلات (متاحة للطلاب الراغبين في التعلم والتطبيق وكذلك المطورين ذوي الخبرة).",
+      };
+    }
+
+    // 19. HR Follower, 3-Strikes Warning Policy & Member of the Month (VIP)
+    if (
+      /^(ايه )?(هو )?(نظام ال hr follower( والانذارات)?|ال hr follower|سياسه الانذارات|نظام الانذارات|الانذارات|العضو المميز|member of the month|hr follower( system)?|warning policy|3 strikes)$/.test(
+        cleaned
+      ) ||
+      /^(what is (the )?(hr follower( system)?|warning policy|3 strikes policy|member of the month))$/.test(
+        cleaned
+      )
+    ) {
+      return {
+        isGreeting: false,
+        reply: isEn
+          ? "**HR Support, Warnings & Recognition Policy:**\n- **HR Follower System:** Every committee member gets a dedicated HR Follower who supports them step-by-step and helps balance university studies with entity tasks.\n- **3-Strikes Warning Policy:** Members receive up to 3 warnings (Strikes) only if they ignore their HR Follower, repeatedly miss meetings without a valid excuse, or neglect tasks without communicating. A 3rd strike results in removal (Filtration). Valid academic or personal excuses are always respected when communicated!\n- **Member of the Month (VIP):** The most active member each month is honored publicly and receives VIP priority in all activities."
+          : "**نظام المتابعة (HR Follower) والإنذارات والتكريم:**\n- **HR Follower:** لكل عضو في اللجان مسؤول متابعة مخصص بيدعمه خطوة بخطوة ويساعده يحل أي عقبة ويوازن بين الكلية والكيان.\n- **سياسة الـ 3 إنذارات (3-Strikes Policy):** بيحصل العضو على إنذار فقط في حالة تجاهل الـ HR Follower (\"الكرف\") أو الغياب المتكرر وإهمال المهام بدون عذر أو تواصل، وعند الإنذار الثالث يتم الإعفاء (Filtration). أما الأعذار الحقيقية زي الامتحانات وضغط الدراسة فمقدّرة تماماً طالما فيه تواصل.\n- **العضو المميز (Member of the Month - VIP):** بيتكرم أنشط عضو شهرياً قدام الكيان كله وبيحصل على أولوية وتسهيلات VIP في جميع الأنشطة.",
+      };
+    }
+
+    // 20. Past Events, Initiatives & Achievements
+    if (
+      /^(ايه )?(ابرز |اهم )?(ايفنتات وانجازات الكيان|انجازات الكيان|ايفنتات الكيان|انشطه الكيان السابقه|فعاليات الكيان|دوري العقول الخضراء|نادي اللغات|قاده الاخضر|خلي المذاكره لعبتك)$/.test(
+        cleaned
+      ) ||
+      /^(what are (the )?(past events|achievements|initiatives|programs)( of alexanders)?|alexanders achievements|green minds league|language club)$/.test(
+        cleaned
+      )
+    ) {
+      return {
+        isGreeting: false,
+        reply: isEn
+          ? "**Key Alexanders Events, Programs & Achievements:**\n- **Green Minds League:** Environmental & critical-thinking competition with Bibliotheca Alexandrina across 14 faculties (Alexanders won **2nd Place** overall).\n- **Plastic-Free University Celebration:** Major World Environment Day event with the Ministry of Youth and Sports.\n- **Climate Change TOT:** 2-day Training of Trainers at the Faculty of Pharmacy with **ICESCO**.\n- **Green Leaders Program:** 3-day intensive training on green energy & green economy.\n- **Greenovate Hackathon & Freelancing Training:** In partnership with **Creativa Hub Alexandria (ITIDA/TIEC)**.\n- **Alexanders Language Club:** Practical speaking in **English, Turkish, and Chinese**.\n- **\"خلي المذاكرة لعبتك\" (1 & 2):** Exam-season study & time-management sessions.\n- **Field & Cultural Visits:** Arab Sustainability Expo (Cairo), Cairo International Book Fair, Cavafy Museum, and Anfoushi Beach Cleanup (100+ students)."
+          : "**أبرز إيفنتات ومبادرات وإنجازات كيان ألكساندرز:**\n- **دوري العقول الخضراء (Green Minds League):** أول مسابقة جامعية تجمع بين الوعي البيئي والتفكير النقدي بالتعاون مع مكتبة الإسكندرية بمشاركة 14 كلية (فاز فريق ألكساندرز **بالمركز الثاني**).\n- **احتفالية \"جامعة بلا بلاستيك\":** في اليوم العالمي للبيئة بمسرح المدينة الجامعية بالتعاون مع وزارة الشباب والرياضة.\n- **تدريب إعداد المدربين للمناخ (TOT):** بكلية الصيدلة بالتعاون مع منظمة **الإيسيسكو (ICESCO)**.\n- **برنامج قادة الأخضر (Green Leaders):** تدريب مكثف لمدة 3 أيام عن الطاقة الخضراء والاقتصاد الأخضر.\n- **هاكاثون Greenovate وتدريب العمل الحر (Freelancing):** بالتعاون مع **Creativa Hub Alexandria**.\n- **نادي اللغات (Language Club):** لممارسة المحادثة بـ 3 لغات (**الإنجليزية، التركية، والصينية**).\n- **سيشنز \"خلي المذاكرة لعبتك\" (1 و2):** لدعم الطلاب في تنظيم الوقت والمذاكرة فترة الامتحانات.\n- **زيارات ومبادرات ميدانية:** المعرض العربي للاستدامة بالقاهرة، معرض القاهرة الدولي للكتاب، متحف كفافيس، وحملة تنظيف شاطئ سيد درويش بالأنفوشي بمشاركة أكثر من 100 طالب.",
+      };
+    }
+
+    // 21. Key Partners & Collaborations
+    if (
+      /^(مين )?(هم |هما )?(شركاء (كيان )?(الكساندرز|الكسندرز|الكيان)|الشركاء|تعاونات الكيان|شراكات الكيان)$/.test(
+        cleaned
+      ) ||
+      /^(who are (your |alexanders )?partners|key partners|collaborations|partnerships)$/.test(
+        cleaned
+      )
+    ) {
+      return {
+        isGreeting: false,
+        reply: isEn
+          ? "**Key Partners & Collaborations:**\n- **Bibliotheca Alexandrina** (مكتبة الإسكندرية)\n- **Ministry of Youth and Sports** (وزارة الشباب والرياضة)\n- **ICESCO** (منظمة الإيسيسكو)\n- **Arab Union for Sustainable Development and Environment**\n- **Our Earth Climate Foundation for Sustainable Development**\n- **Creativa Hub Alexandria (ITIDA / TIEC)**\n- **Anna Lindh Foundation & Green Opportunities Initiative** (EU-funded)\n- **Alexandria University Youth Entity & Tourism Lovers Group**"
+          : "**أبرز شركاء وتعاونات كيان ألكساندرز:**\n- **مكتبة الإسكندرية (Bibliotheca Alexandrina)**\n- **وزارة الشباب والرياضة**\n- **منظمة الإيسيسكو (ICESCO)**\n- **الاتحاد العربي للتنمية المستدامة والبيئة**\n- **مؤسسة مناخ أرضنا للتنمية المستدامة**\n- **مراكز إبداع مصر الرقمية (Creativa Hub Alexandria - ITIDA / TIEC)**\n- **مؤسسة أنا ليندا ومبادرة فرص خضراء** (الممولة من الاتحاد الأوروبي)\n- **كيان شباب جامعة الإسكندرية وجماعة محبي السياحة**",
+      };
+    }
+
+    // 22. Official Affiliation, Supervision & Location
+    if (
+      /^(الكيان تابع لمين( ومكانه فين)?|تبعيه الكيان|اشراف الكيان|مقر الكيان|مكان الكيان فين|الكيان فين|مين مشرف علي الكيان)$/.test(
+        cleaned
+      ) ||
+      /^(where is alexanders located|official affiliation|who supervises alexanders|location of alexanders)$/.test(
+        cleaned
+      )
+    ) {
+      return {
+        isGreeting: false,
+        reply: isEn
+          ? "**Official Affiliation, Supervision & Location:**\n- **Affiliation:** An official student entity under the **General Administration of Youth Welfare — Student Families Department** at **Alexandria University**.\n- **Patronage & Supervision:** Under the patronage of the University President (**Prof. Dr. Abdelaziz Konsowa**) and direct supervision of the Vice President for Education & Student Affairs (**Prof. Dr. Ahmed Adel Abdel Hakim**), with academic and administrative support from **Mr. Mohamed Fawzy** (Director of Student Families Dept.), **Prof. Dr. Hassan Abdeen**, **Prof. Dr. Amani El-Sawy**, and **Prof. Dr. Magdy Agamia**.\n- **Location:** Student Activities Complex — General Administration of Youth Welfare, Alexandria University."
+          : "**التبعية الرسمية والإشراف والمقر:**\n- **التبعية القانونية:** كيان طلابي رسمي تابع **للإدارة العامة لرعاية الشباب - إدارة الأسر الطلابية بجامعة الإسكندرية**.\n- **الرعاية والإشراف:** تحت رعاية رئيس الجامعة (**أ.د/ عبد العزيز قنصوه**) وإشراف مباشر من نائب رئيس الجامعة لشئون التعليم والطلاب (**أ.د/ أحمد عادل عبد الحكيم**)، وبدعم إداري وأكاديمي من **أ. محمد فوزي** (مدير إدارة الأسر الطلابية)، **د. حسن عابدين** (عميد كلية التربية)، **د. أماني الصاوي** (رئيس قسم اللغة الإنجليزية)، و **أ.د/ مجدي عجمية** (رئيس قسم اللغات الشرقية).\n- **المقر:** مجمع الأنشطة الطلابية - الإدارة العامة لرعاية الشباب، جامعة الإسكندرية.",
       };
     }
 
@@ -1116,7 +1302,7 @@
     dom.input = document.getElementById("alexChatInput");
     dom.sendBtn = document.getElementById("alexChatSendBtn");
 
-    // Populate quick-starter chips
+    // Populate quick-starter chips with smooth wheel-to-horizontal scroll
     QUICK_CHIPS.forEach((question) => {
       const chip = document.createElement("button");
       chip.type = "button";
@@ -1128,6 +1314,17 @@
       });
       dom.chips.appendChild(chip);
     });
+
+    dom.chips?.addEventListener(
+      "wheel",
+      (e) => {
+        if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+          e.preventDefault();
+          dom.chips.scrollLeft += e.deltaY;
+        }
+      },
+      { passive: false }
+    );
 
     // Initial welcome bubble
     appendMessage("assistant", WELCOME_MESSAGE);
