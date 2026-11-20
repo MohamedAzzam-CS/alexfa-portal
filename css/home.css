@@ -116,6 +116,15 @@
   flex-wrap: wrap;
 }
 
+.about-preview,
+.events-section,
+.committees-section,
+.offer-section,
+.cta-section {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 600px;
+}
+
 .hero-image {
   flex: 0 0 auto;
   position: relative;
@@ -134,9 +143,19 @@
   width: 380px;
   max-width: 100%;
   height: auto;
-  filter: drop-shadow(0 25px 50px rgba(56, 189, 248, 0.25));
-  animation: float 6s ease-in-out infinite;
   transition: transform 0.4s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-badge .dot,
+  .hero-image img,
+  .fade-in,
+  .fade-in-right,
+  .fade-in-left,
+  .stagger-children > * {
+    animation: none !important;
+    transition: none !important;
+  }
 }
 
 .hero-founder-badge {

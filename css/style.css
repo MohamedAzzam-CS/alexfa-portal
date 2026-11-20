@@ -601,8 +601,6 @@ section {
   width: 380px;
   max-width: 100%;
   height: auto;
-  filter: drop-shadow(0 25px 50px rgba(56, 189, 248, 0.25));
-  animation: float 6s ease-in-out infinite;
   transition: transform 0.4s ease;
 }
 

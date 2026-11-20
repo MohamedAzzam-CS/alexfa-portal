@@ -34,6 +34,13 @@ function initMobileMenu() {
 
 // ===== Scroll Reveal Animations =====
 function initScrollAnimations() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    document.querySelectorAll('.fade-in, .fade-in-right, .fade-in-left, .stagger-children').forEach(el => {
+      el.classList.add('visible');
+    });
+    return;
+  }
+
   const observer = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
       if (entry.isIntersecting) {
