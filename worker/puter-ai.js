@@ -148,16 +148,7 @@ export async function callPuterAiFromWorker({
     throw lastError || new Error("All Puter AI models failed to respond.");
   }
 
-  // Fast grounded KB check or Cloudflare Workers AI fallback when GUEST_PUTER_TOKEN is not set
-  const kbReply = matchGroundedKnowledgeBase(userMessage);
-  if (kbReply) {
-    return {
-      reply: kbReply,
-      model: "alexanders-kb-engine",
-      driver: "worker-kb",
-    };
-  }
-
+  // When GUEST_PUTER_TOKEN is not set, run AI inference via Cloudflare Workers AI (env.AI) first
   if (env?.AI && typeof env.AI.run === "function") {
     const cfModels = [
       "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
@@ -182,6 +173,16 @@ export async function callPuterAiFromWorker({
         // Try next candidate
       }
     }
+  }
+
+  // Last-resort offline fallback when running locally without Puter token or Workers AI binding
+  const kbReply = matchGroundedKnowledgeBase(userMessage);
+  if (kbReply) {
+    return {
+      reply: kbReply,
+      model: "alexanders-kb-engine",
+      driver: "worker-kb",
+    };
   }
 
   throw new Error(

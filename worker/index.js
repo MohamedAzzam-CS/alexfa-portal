@@ -2,12 +2,14 @@
 // Alexanders Group AI Chat - Cloudflare Worker Backend
 // Enforces:
 // 1. Strict server-side system prompt & knowledge base isolation
-// 2. Hybrid 5-message guest gate (signed HttpOnly cookie + GUEST_QUOTA_KV)
-// 3. Puter User-Pays authenticated inference + pre-login sessionId linking
-// 4. Temporary ISO-Week partitioned storage via StorageAdapter (KV / R2)
+// 2. 21-FAQ Short-Circuit Fast Path (faqId: 1..21, O(1), zero quota impact)
+// 3. Hybrid 5-message guest gate (signed HttpOnly cookie + GUEST_QUOTA_KV)
+// 4. Puter User-Pays authenticated inference + pre-login sessionId linking
+// 5. Temporary ISO-Week partitioned storage via StorageAdapter (KV / R2)
 // ============================================================================
 
 import { assembleMessages } from "./system-prompt.js";
+import { FAQS, FAQ_CATALOG_VERSION, getFaqById } from "./faqs.js";
 import { StorageAdapter, getIsoWeek } from "./storage-adapter.js";
 import {
   GUEST_MESSAGE_LIMIT,
@@ -44,6 +46,21 @@ function jsonResponse(request, data, status = 200, extraHeaders = {}) {
       ...extraHeaders,
     },
   });
+}
+
+function handleGetFaqs(request) {
+  return jsonResponse(
+    request,
+    {
+      version: FAQ_CATALOG_VERSION,
+      count: FAQS.length,
+      faqs: FAQS,
+    },
+    200,
+    {
+      "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400",
+    }
+  );
 }
 
 async function handleGetQuota(request, env, url) {
@@ -135,7 +152,104 @@ async function handleChatRequest(request, env, ctx) {
     );
   }
 
-  // Strictly accept only { message, history, sessionId } from frontend
+  // ==========================================================================
+  // 0. 21-FAQ Short-Circuit Fast Path (faqId: 1..21)
+  // Checked BEFORE running quota enforcement or AI inference.
+  // ==========================================================================
+  if (body?.faqId !== undefined && body?.faqId !== null) {
+    const faq = getFaqById(body.faqId);
+    if (!faq) {
+      return jsonResponse(
+        request,
+        {
+          error: "INVALID_FAQ_ID",
+          message: "faqId must be an integer between 1 and 21.",
+        },
+        400
+      );
+    }
+
+    const [auth, quotaState] = await Promise.all([
+      authenticatePuterRequest(request, env),
+      getGuestQuotaState(request, env, body?.sessionId),
+    ]);
+
+    const sessionId = quotaState.sessionId;
+    const now = new Date();
+    const isoWeek = getIsoWeek(now);
+    const storage = new StorageAdapter(env);
+
+    // If signed in, ensure pre-login sessionId is linked to authenticated identity
+    if (auth.isAuthenticated) {
+      const linkPromise = storage.linkSessionToUser(
+        sessionId,
+        {
+          userId: auth.userId,
+          email: auth.email,
+          username: auth.username,
+        },
+        isoWeek
+      );
+      if (ctx && typeof ctx.waitUntil === "function") {
+        ctx.waitUntil(linkPromise);
+      } else {
+        await linkPromise;
+      }
+    }
+
+    // Do NOT increment the guest's 5-message quota counter.
+    // Log the FAQ interaction to weekly storage with compact reference fields.
+    const turnRecord = {
+      id: crypto.randomUUID(),
+      timestamp: now.toISOString(),
+      isoWeek,
+      type: "faq",
+      faqRef: faq.faqRef,
+      sessionId,
+      isAuthenticated: auth.isAuthenticated,
+      userId: auth.isAuthenticated ? auth.userId : null,
+      email: auth.isAuthenticated ? auth.email : null,
+      username: auth.isAuthenticated ? auth.username : null,
+      userMessage: faq.question,
+      assistantResponse: faq.answer,
+    };
+
+    const logPromise = storage.logChatTurn(turnRecord);
+    if (ctx && typeof ctx.waitUntil === "function") {
+      ctx.waitUntil(logPromise);
+    } else {
+      await logPromise;
+    }
+
+    return jsonResponse(request, {
+      id: turnRecord.id,
+      type: "faq",
+      faqId: faq.id,
+      faqRef: faq.faqRef,
+      question: faq.question,
+      answer: faq.answer,
+      reply: faq.answer,
+      sessionId,
+      isoWeek,
+      isAuthenticated: auth.isAuthenticated,
+      user: auth.isAuthenticated
+        ? {
+            userId: auth.userId,
+            email: auth.email,
+            username: auth.username,
+          }
+        : null,
+      guestQuota: {
+        count: quotaState.count,
+        limit: GUEST_MESSAGE_LIMIT,
+        remaining: quotaState.remaining,
+      },
+    });
+  }
+
+  // ==========================================================================
+  // 1. Free-Text AI Chat Pipeline ({ message, history, sessionId })
+  // ==========================================================================
   const userMessage = typeof body?.message === "string" ? body.message.trim() : "";
   if (!userMessage) {
     return jsonResponse(
@@ -157,7 +271,7 @@ async function handleChatRequest(request, env, ctx) {
     request.headers.get("Authorization")?.match(/^Bearer\s+\S+/i)
   );
 
-  // 1. Inspect Puter Auth Header & Guest Quota
+  // Inspect Puter Auth Header & Guest Quota
   const [auth, quotaState] = await Promise.all([
     authenticatePuterRequest(request, env),
     getGuestQuotaState(request, env, body?.sessionId),
@@ -282,6 +396,8 @@ async function handleChatRequest(request, env, ctx) {
     id: crypto.randomUUID(),
     timestamp: now.toISOString(),
     isoWeek,
+    type: "chat",
+    faqRef: null,
     sessionId,
     isAuthenticated: auth.isAuthenticated,
     userId: auth.isAuthenticated ? auth.userId : null,
@@ -307,6 +423,8 @@ async function handleChatRequest(request, env, ctx) {
     request,
     {
       id: turnRecord.id,
+      type: "chat",
+      faqRef: null,
       reply: aiResult.reply,
       sessionId,
       isoWeek,
@@ -342,6 +460,10 @@ export default {
     }
 
     // API Routes
+    if (url.pathname === "/api/faqs" && request.method === "GET") {
+      return handleGetFaqs(request);
+    }
+
     if (url.pathname === "/api/chat" && request.method === "POST") {
       return handleChatRequest(request, env, ctx);
     }

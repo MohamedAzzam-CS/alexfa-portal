@@ -1,8 +1,10 @@
 // ==============================================================================
 // Alexanders Group - Cloudflare Worker + Puter.js Hybrid AI Chat Widget
 // - Strict Prompt Isolation: System prompt & Knowledge Base live ONLY in Worker.
-// - Frontend sends ONLY { message, history, sessionId } + Bearer <puter_token>.
-// - Server-enforced 5-Message Guest Gate + Unlimited Puter User-Pays Mode.
+// - 21-FAQ Short-Circuit Fast Path: Clicking an FAQ sends { faqId: 1..21, sessionId }
+//   with zero guest quota impact, while always logging the interaction on the server.
+// - Typed Input Separation: Manually typed messages ALWAYS send { message, history, sessionId }
+//   through the normal 5-message guest quota check and AI inference pipeline.
 // ==============================================================================
 (function () {
   "use strict";
@@ -14,47 +16,53 @@
       : typeof window !== "undefined" && window.location.hostname.endsWith(".workers.dev")
         ? ""
         : DEFAULT_WORKER_ORIGIN;
+
   const CHAT_ENDPOINT = `${API_BASE}/api/chat`;
+  const FAQS_ENDPOINT = `${API_BASE}/api/faqs`;
   const QUOTA_ENDPOINT = `${API_BASE}/api/quota`;
   const LINK_ENDPOINT = `${API_BASE}/api/auth/link`;
 
   const GUEST_LIMIT = 5;
   const MAX_HISTORY_MESSAGES = 12; // Keep last 6 conversation turns
   const SESSION_STORAGE_KEY = "alex_chat_session_id";
+  const FAQ_CACHE_STORAGE_KEY = "alex_chat_faqs_cache_v1";
+  const FAQ_CATALOG_VERSION = "2026-v1";
 
   const FB_URL = "https://www.facebook.com/share/1HKtdgUo2Y/";
 
-  const QUICK_CHIPS = [
-    "إيه هو كيان ألكساندرز؟",
-    "إيه هي لجان ألكسندرز؟",
-    "مين يقدر ينضم للكيان؟",
-    "إزاي أقدم؟",
-    "إيه الفرق بين Member و General Member؟",
-    "إيه الفرق بين الأعضاء والبورد؟",
-    "هل الأنشطة والكورسات مجانية؟",
-    "هل الانضمام بيأثر على الدراسة؟",
-    "إيه دور لجنة التنظيم OC؟",
-    "إيه دور لجنة الـ HR؟",
-    "إيه دور لجنة العلاقات العامة PR؟",
-    "إيه دور لجنة الميديا Media؟",
-    "إيه دور اللجنة الفنية والهاند ميد؟",
-    "إيه دور لجنة البرمجة Programming؟",
-    "إيه نظام الـ HR Follower والإنذارات؟",
-    "إيه أبرز إيفنتات وإنجازات الكيان؟",
-    "مين شركاء كيان ألكساندرز؟",
-    "الكيان تابع لمين ومكانه فين؟",
-    "إمتى ميعاد التقديم؟",
-    "إزاي أقدم على البورد؟",
-    "إيه صفحات التواصل الرسمية؟",
+  // Initial 21 FAQ items (id: 1..21) for instant chip rendering before/while GET /api/faqs syncs
+  const DEFAULT_FAQ_ITEMS = [
+    { id: 1, faqRef: "faq-1", question: "إيه هو كيان ألكساندرز؟" },
+    { id: 2, faqRef: "faq-2", question: "إيه هي لجان ألكسندرز؟" },
+    { id: 3, faqRef: "faq-3", question: "مين يقدر ينضم للكيان؟" },
+    { id: 4, faqRef: "faq-4", question: "إزاي أقدم؟" },
+    { id: 5, faqRef: "faq-5", question: "إيه الفرق بين Member و General Member؟" },
+    { id: 6, faqRef: "faq-6", question: "إيه الفرق بين الأعضاء والبورد؟" },
+    { id: 7, faqRef: "faq-7", question: "هل الأنشطة والكورسات مجانية؟" },
+    { id: 8, faqRef: "faq-8", question: "هل الانضمام بيأثر على الدراسة؟" },
+    { id: 9, faqRef: "faq-9", question: "إيه دور لجنة التنظيم OC؟" },
+    { id: 10, faqRef: "faq-10", question: "إيه دور لجنة الـ HR؟" },
+    { id: 11, faqRef: "faq-11", question: "إيه دور لجنة العلاقات العامة PR؟" },
+    { id: 12, faqRef: "faq-12", question: "إيه دور لجنة الميديا Media؟" },
+    { id: 13, faqRef: "faq-13", question: "إيه دور اللجنة الفنية والهاند ميد؟" },
+    { id: 14, faqRef: "faq-14", question: "إيه دور لجنة البرمجة Programming؟" },
+    { id: 15, faqRef: "faq-15", question: "إيه نظام الـ HR Follower والإنذارات؟" },
+    { id: 16, faqRef: "faq-16", question: "إيه أبرز إيفنتات وإنجازات الكيان؟" },
+    { id: 17, faqRef: "faq-17", question: "مين شركاء كيان ألكساندرز؟" },
+    { id: 18, faqRef: "faq-18", question: "الكيان تابع لمين ومكانه فين؟" },
+    { id: 19, faqRef: "faq-19", question: "إمتى ميعاد التقديم؟" },
+    { id: 20, faqRef: "faq-20", question: "إزاي أقدم على البورد؟" },
+    { id: 21, faqRef: "faq-21", question: "إيه صفحات التواصل الرسمية؟" },
   ];
 
   const WELCOME_MESSAGE =
     "أهلاً بك في مجتمع **ألكساندرز (Alexanders Group)** بجامعة الإسكندرية! 👋\n" +
-    "لديك **5 رسائل مجانية** كزائر بدون تسجيل دخول، وبعدها يمكنك تسجيل الدخول مجاناً بحساب Puter للمتابعة بلا حدود.\n" +
-    "You have **5 free guest messages** without signing in; sign in free with Puter anytime for unlimited chat.";
+    "الأسئلة الشائعة (FAQ) مجانية دائماً بلا حدود، ولديك **5 رسائل مجانية** للأسئلة المكتوبة كزائر قبل تسجيل الدخول عبر Puter.\n" +
+    "FAQ quick chips are always free; you also have **5 free guest messages** for custom typed questions before signing in with Puter.";
 
   // Runtime state
   let sessionId = getOrCreateSessionId();
+  let faqCatalog = loadCachedFaqs() || DEFAULT_FAQ_ITEMS;
   let conversationHistory = [];
   let pendingMessage = null;
   let isBusy = false;
@@ -70,7 +78,7 @@
   const dom = {};
 
   // ============================================================================
-  // 1. Session ID & Puter.js Authentication Helpers
+  // 1. Session ID, FAQ Local Cache & Puter.js Authentication Helpers
   // ============================================================================
   function generateAnonSessionId() {
     if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -100,6 +108,65 @@
       localStorage.setItem(SESSION_STORAGE_KEY, newSid);
     } catch {
       // Ignore storage quota errors in private browsing
+    }
+  }
+
+  function loadCachedFaqs() {
+    try {
+      const raw = localStorage.getItem(FAQ_CACHE_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (
+        parsed &&
+        parsed.version === FAQ_CATALOG_VERSION &&
+        Array.isArray(parsed.faqs) &&
+        parsed.faqs.length === 21
+      ) {
+        return parsed.faqs;
+      }
+    } catch {
+      // Ignore corrupted local cache
+    }
+    return null;
+  }
+
+  function saveCachedFaqs(version, faqs) {
+    try {
+      localStorage.setItem(
+        FAQ_CACHE_STORAGE_KEY,
+        JSON.stringify({
+          version: version || FAQ_CATALOG_VERSION,
+          cachedAt: Date.now(),
+          faqs,
+        })
+      );
+    } catch {
+      // Ignore storage write errors
+    }
+  }
+
+  async function syncFaqsFromWorker() {
+    const cached = loadCachedFaqs();
+    if (cached && cached.every((item) => item.answer)) {
+      faqCatalog = cached;
+      renderFaqChips();
+      return;
+    }
+
+    try {
+      const res = await fetch(FAQS_ENDPOINT, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data?.faqs) && data.faqs.length > 0) {
+        faqCatalog = data.faqs;
+        saveCachedFaqs(data.version || FAQ_CATALOG_VERSION, data.faqs);
+        renderFaqChips();
+      }
+    } catch {
+      // Fallback to DEFAULT_FAQ_ITEMS on network error
     }
   }
 
@@ -537,7 +604,7 @@
   }
 
   // ============================================================================
-  // 3. Message DOM & Controls
+  // 3. Message DOM & FAQ Quick-Select Bar Controls
   // ============================================================================
   function scrollToBottom() {
     if (dom.messages) {
@@ -598,6 +665,25 @@
     dom.faqToggle.setAttribute("aria-expanded", String(!isCollapsed));
   }
 
+  function renderFaqChips() {
+    if (!dom.chips) return;
+    dom.chips.innerHTML = "";
+    faqCatalog.forEach((faqItem) => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "alex-chat-chip";
+      chip.dataset.faqId = String(faqItem.id);
+      chip.dataset.faqRef = faqItem.faqRef || `faq-${faqItem.id}`;
+      chip.textContent = faqItem.question;
+      chip.disabled = isBusy;
+      chip.addEventListener("click", () => {
+        if (isBusy) return;
+        dispatchFaqClick(faqItem.id);
+      });
+      dom.chips.appendChild(chip);
+    });
+  }
+
   function resetChat() {
     sessionNonce++;
     conversationHistory = [];
@@ -614,7 +700,109 @@
   }
 
   // ============================================================================
-  // 4. Cloudflare Worker Chat Client (POST /api/chat)
+  // 4A. Numeric FAQ Short-Circuit Dispatch ({ faqId: 1..21, sessionId })
+  // Always pings POST /api/chat for weekly logging, with zero guest quota impact.
+  // ============================================================================
+  async function dispatchFaqClick(faqId) {
+    const numericId = Number(faqId);
+    if (!Number.isInteger(numericId) || numericId < 1 || numericId > 21 || isBusy) {
+      return;
+    }
+
+    const cachedItem = faqCatalog.find((f) => f.id === numericId);
+    const questionText = cachedItem?.question || `سؤال #${numericId}`;
+
+    hideAuthPrompt();
+    setFaqCollapsed(true);
+    const activeNonce = sessionNonce;
+
+    // Render user question bubble immediately
+    appendMessage("user", questionText);
+    setBusy(true);
+
+    // If cached answer exists locally, render immediately while still pinging server to log
+    const hasCachedAnswer = Boolean(cachedItem?.answer);
+    const assistantNode = hasCachedAnswer
+      ? appendMessage("assistant", cachedItem.answer)
+      : appendMessage("assistant", "", { isTyping: true });
+
+    try {
+      const headers = {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      };
+
+      const puterToken = await getPuterAuthToken();
+      if (puterToken) {
+        headers.Authorization = `Bearer ${puterToken}`;
+      }
+
+      // Send ONLY { faqId, sessionId } — never free-text { message }
+      const response = await fetch(CHAT_ENDPOINT, {
+        method: "POST",
+        credentials: "include",
+        headers,
+        body: JSON.stringify({
+          faqId: numericId,
+          sessionId,
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (activeNonce !== sessionNonce) return;
+
+      if (data?.sessionId) {
+        persistSessionId(data.sessionId);
+      }
+      if (data?.guestQuota) {
+        guestQuota = {
+          count: Number(data.guestQuota.count ?? guestQuota.count),
+          limit: Number(data.guestQuota.limit ?? GUEST_LIMIT),
+          remaining: Number(data.guestQuota.remaining ?? guestQuota.remaining),
+        };
+      }
+
+      const finalAnswer = String(data?.answer || data?.reply || cachedItem?.answer || "").trim();
+      if (!finalAnswer) {
+        throw new Error(data?.message || `HTTP ${response.status}`);
+      }
+
+      if (!hasCachedAnswer && assistantNode) {
+        const finalDir = detectDirection(finalAnswer);
+        assistantNode.msgEl.setAttribute("dir", finalDir);
+        assistantNode.bodyEl.setAttribute("dir", finalDir);
+        assistantNode.bodyEl.innerHTML = renderMarkdown(finalAnswer);
+      }
+
+      conversationHistory.push({ role: "user", content: questionText });
+      conversationHistory.push({ role: "assistant", content: finalAnswer });
+      if (conversationHistory.length > MAX_HISTORY_MESSAGES) {
+        conversationHistory = conversationHistory.slice(-MAX_HISTORY_MESSAGES);
+      }
+
+      await refreshAuthUI();
+    } catch (err) {
+      if (activeNonce !== sessionNonce) return;
+      if (!hasCachedAnswer && assistantNode) {
+        const msg = `حدث خطأ أثناء تحميل الإجابة. يمكنك التواصل معنا عبر [our_facebook](${FB_URL})`;
+        assistantNode.msgEl.classList.add("alex-chat-msg--error");
+        const errDir = detectDirection(msg);
+        assistantNode.msgEl.setAttribute("dir", errDir);
+        assistantNode.bodyEl.setAttribute("dir", errDir);
+        assistantNode.bodyEl.innerHTML = renderMarkdown(msg);
+      }
+    } finally {
+      if (activeNonce === sessionNonce) {
+        setBusy(false);
+        if (dom.input) dom.input.focus();
+        scrollToBottom();
+      }
+    }
+  }
+
+  // ============================================================================
+  // 4B. Free-Text AI Pipeline ({ message, history, sessionId })
+  // Strictly used for manually typed messages (even if identical to an FAQ).
   // ============================================================================
   async function sendMessage(rawText) {
     const userText = (rawText || "").trim();
@@ -641,7 +829,7 @@
         headers.Authorization = `Bearer ${puterToken}`;
       }
 
-      // Frontend sends ONLY { message, history, sessionId } — NO system prompt!
+      // Strictly send { message, history, sessionId } (never faqId) for typed input
       const payload = {
         message: userText,
         history: conversationHistory.slice(-MAX_HISTORY_MESSAGES),
@@ -851,17 +1039,7 @@
     dom.input = document.getElementById("alexChatInput");
     dom.sendBtn = document.getElementById("alexChatSendBtn");
 
-    QUICK_CHIPS.forEach((question) => {
-      const chip = document.createElement("button");
-      chip.type = "button";
-      chip.className = "alex-chat-chip";
-      chip.textContent = question;
-      chip.addEventListener("click", () => {
-        if (isBusy) return;
-        sendMessage(question);
-      });
-      dom.chips.appendChild(chip);
-    });
+    renderFaqChips();
 
     dom.chips?.addEventListener(
       "wheel",
@@ -910,6 +1088,7 @@
       hideAuthPrompt();
     });
 
+    // Strict separation: form submission ALWAYS sends free-text { message, history, sessionId }
     dom.form?.addEventListener("submit", (e) => {
       e.preventDefault();
       const text = dom.input?.value?.trim();
@@ -918,6 +1097,7 @@
     });
 
     refreshAuthUI();
+    syncFaqsFromWorker();
     syncQuotaFromWorker();
   }
 
