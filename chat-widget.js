@@ -34,8 +34,8 @@
 
   const WELCOME_MESSAGE =
     "أهلاً بك في مجتمع **ألكساندرز (Alexanders Group)** بجامعة الإسكندرية! 👋\n" +
-    "تقدر تسأل الأسئلة الشائعة فوراً بدون تسجيل دخول، وللأسئلة المفتوحة سجّل دخول مجاني بضغطة واحدة.\n" +
-    "FAQs work immediately without sign-in; open-ended AI questions use a free 1-click sign-in.";
+    "تقدر تسأل الأسئلة الشائعة فوراً، وللأسئلة المفتوحة بيتم التفعيل السريع مجاناً (ضيف أو Google).\n" +
+    "FAQs work immediately; open-ended AI uses quick free Guest or Google access.";
 
   // Runtime state
   let kbTextCache = null;
@@ -89,8 +89,15 @@
       try {
         if (typeof window.puter.auth.getUser === "function") {
           const user = await window.puter.auth.getUser();
-          if (user?.username) {
+          if (!isUserSignedIn()) return;
+          if (user?.is_temp === true) {
+            dom.statusText.textContent = "متصل (ضيف مجاني)";
+            dom.authPill.textContent = "حساب Google";
+            dom.authPill.title = "ربط أو تسجيل الدخول بحساب Google / Puter";
+            dom.authPill.hidden = false;
+          } else if (user?.username) {
             dom.statusText.textContent = `متصل • ${user.username}`;
+            dom.authPill.hidden = true;
           }
         }
       } catch {
@@ -98,6 +105,8 @@
       }
     } else {
       dom.statusText.textContent = "جاهز للدردشة";
+      dom.authPill.textContent = "تسجيل الدخول";
+      dom.authPill.title = "تسجيل الدخول بحساب Google أو Puter";
       dom.authPill.hidden = false;
     }
   }
@@ -125,22 +134,37 @@
     }
   }
 
-  function handleSignInClick() {
+  function triggerPuterSignIn(options = {}) {
+    const { attemptTempUser = true, requestAuth = false } = options;
+
     if (!isPuterAvailable()) {
       showAuthPrompt("تعذر تحميل خدمة Puter.js. تأكد من اتصالك بالإنترنت ثم أعد المحاولة.");
       return;
     }
 
+    const authNonce = sessionNonce;
     if (dom.signInBtn) dom.signInBtn.disabled = true;
     if (dom.authError) dom.authError.hidden = true;
+    if (dom.statusText && !isUserSignedIn()) {
+      dom.statusText.textContent = "جاري التفعيل السريع...";
+    }
 
-    // Trigger signIn() synchronously inside direct click handler to avoid popup blockers
+    const signInOptions = {};
+    if (attemptTempUser) signInOptions.attempt_temp_user_creation = true;
+    if (requestAuth) signInOptions.request_auth = true;
+
+    // Trigger signIn() synchronously inside direct user gesture handler to avoid popup blockers
     let signInPromise;
     try {
-      signInPromise = window.puter.auth.signIn();
+      signInPromise = Object.keys(signInOptions).length
+        ? window.puter.auth.signIn(signInOptions)
+        : window.puter.auth.signIn();
     } catch (err) {
       if (dom.signInBtn) dom.signInBtn.disabled = false;
-      showAuthPrompt("المتصفح منع نافذة تسجيل الدخول (Popup blocked). اسمح بالنوافذ المنبثقة ثم حاول مرة أخرى.");
+      refreshAuthUI();
+      showAuthPrompt(
+        "المتصفح منع نافذة تسجيل الدخول (Popup blocked). اسمح بالنوافذ المنبثقة ثم حاول مرة أخرى."
+      );
       return;
     }
 
@@ -148,13 +172,16 @@
       .then(() => {
         if (dom.signInBtn) dom.signInBtn.disabled = false;
         if (!isUserSignedIn()) {
-          showAuthPrompt("لم يكتمل تسجيل الدخول. اضغط على الزر للمحاولة مرة أخرى.");
+          refreshAuthUI();
+          showAuthPrompt(
+            "لم يكتمل الاتصال. اضغط الزر للمتابعة السريعة مجاناً (كضيف أو بحساب Google)."
+          );
           return;
         }
         hideAuthPrompt();
         refreshAuthUI();
 
-        if (pendingMessage) {
+        if (authNonce === sessionNonce && pendingMessage) {
           const nextMsg = pendingMessage;
           pendingMessage = null;
           sendMessage(nextMsg);
@@ -162,10 +189,11 @@
       })
       .catch((err) => {
         if (dom.signInBtn) dom.signInBtn.disabled = false;
+        refreshAuthUI();
         const rawMsg = String(err?.message || err || "").toLowerCase();
         const friendly = rawMsg.includes("popup")
           ? "تم حظر نافذة تسجيل الدخول. من فضلك اسمح بالنوافذ المنبثقة (Popups) وحاول مجدداً."
-          : "لم يكتمل تسجيل الدخول. اضغط مرة أخرى للمتابعة بحساب Google أو Puter مجاناً.";
+          : "لم يكتمل الاتصال. اضغط مرة أخرى للمتابعة السريعة مجاناً (ضيف أو حساب Google).";
         showAuthPrompt(friendly);
       });
   }
@@ -860,11 +888,11 @@
       return;
     }
 
-    // User-Pays gate: check auth before calling Puter AI
+    // User-Pays gate: trigger instant guest/quick sign-in synchronously inside user submit gesture
     if (!isUserSignedIn()) {
       setFaqCollapsed(true);
       pendingMessage = userText;
-      showAuthPrompt();
+      triggerPuterSignIn({ attemptTempUser: true });
       return;
     }
 
@@ -1008,15 +1036,15 @@
         <div id="alexChatMessages" class="alex-chat-messages"></div>
 
         <div id="alexChatAuthCard" class="alex-chat-auth-card" hidden>
-          <p class="alex-chat-auth-title">تسجيل دخول مجاني للأسئلة المفتوحة</p>
+          <p class="alex-chat-auth-title">تفعيل سريع ومجاني للأسئلة المفتوحة</p>
           <p class="alex-chat-auth-desc">
-            الأسئلة الشائعة متاحة بدون تسجيل دخول! للأسئلة المفتوحة والمحادثة الذكية الكاملة، سجّل الدخول مجاناً بضغطة واحدة (بحساب Google أو Puter).
+            الأسئلة الشائعة متاحة فوراً! للأسئلة المفتوحة والمحادثة الذكية، اضغط للمتابعة السريعة مجاناً (كدخول ضيف تلقائي أو بحساب Google / Puter).
           </p>
-          <p class="alex-chat-auth-subdesc">FAQs work without sign-in. Open-ended AI answers need a free 1-click Google or Puter sign-in.</p>
+          <p class="alex-chat-auth-subdesc">FAQs work instantly. Open-ended AI answers use quick free Guest or Google/Puter access.</p>
           <p id="alexChatAuthError" class="alex-chat-auth-error" hidden></p>
           <div class="alex-chat-auth-actions">
             <button type="button" id="alexChatSignInBtn" class="alex-chat-signin-btn">
-              متابعة بحساب Google / Puter
+              متابعة سريعة (ضيف / Google)
             </button>
             <button type="button" id="alexChatAuthDismiss" class="alex-chat-auth-dismiss">إلغاء</button>
           </div>
@@ -1135,8 +1163,15 @@
       const currentlyCollapsed = dom.faqBox?.classList.contains("alex-chat-faq-collapsed");
       setFaqCollapsed(!currentlyCollapsed);
     });
-    dom.authPill?.addEventListener("click", handleSignInClick);
-    dom.signInBtn?.addEventListener("click", handleSignInClick);
+    dom.authPill?.addEventListener("click", () =>
+      triggerPuterSignIn({
+        attemptTempUser: !isUserSignedIn(),
+        requestAuth: isUserSignedIn(),
+      })
+    );
+    dom.signInBtn?.addEventListener("click", () =>
+      triggerPuterSignIn({ attemptTempUser: true })
+    );
     dom.authDismissBtn?.addEventListener("click", () => {
       pendingMessage = null;
       hideAuthPrompt();
