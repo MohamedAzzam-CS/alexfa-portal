@@ -34,8 +34,8 @@
 
   const WELCOME_MESSAGE =
     "أهلاً بك في مجتمع **ألكساندرز (Alexanders Group)** بجامعة الإسكندرية! 👋\n" +
-    "تقدر تسأل الأسئلة الشائعة فوراً، وللأسئلة المفتوحة بيتم التفعيل السريع مجاناً (ضيف أو Google).\n" +
-    "FAQs work immediately; open-ended AI uses quick free Guest or Google access.";
+    "تقدر تسأل الأسئلة الشائعة فوراً بدون تسجيل دخول، وللأسئلة المفتوحة سجّل دخول مجاني بحساب Google أو Puter.\n" +
+    "FAQs work immediately without sign-in; open-ended AI questions need a free Google or Puter sign-in.";
 
   // Runtime state
   let kbTextCache = null;
@@ -135,7 +135,7 @@
   }
 
   function triggerPuterSignIn(options = {}) {
-    const { attemptTempUser = true, requestAuth = false } = options;
+    const { requestAuth = false } = options;
 
     if (!isPuterAvailable()) {
       showAuthPrompt("تعذر تحميل خدمة Puter.js. تأكد من اتصالك بالإنترنت ثم أعد المحاولة.");
@@ -146,11 +146,10 @@
     if (dom.signInBtn) dom.signInBtn.disabled = true;
     if (dom.authError) dom.authError.hidden = true;
     if (dom.statusText && !isUserSignedIn()) {
-      dom.statusText.textContent = "جاري التفعيل السريع...";
+      dom.statusText.textContent = "جاري تسجيل الدخول...";
     }
 
     const signInOptions = {};
-    if (attemptTempUser) signInOptions.attempt_temp_user_creation = true;
     if (requestAuth) signInOptions.request_auth = true;
 
     // Trigger signIn() synchronously inside direct user gesture handler to avoid popup blockers
@@ -173,9 +172,7 @@
         if (dom.signInBtn) dom.signInBtn.disabled = false;
         if (!isUserSignedIn()) {
           refreshAuthUI();
-          showAuthPrompt(
-            "لم يكتمل الاتصال. اضغط الزر للمتابعة السريعة مجاناً (كضيف أو بحساب Google)."
-          );
+          showAuthPrompt("لم يكتمل تسجيل الدخول. اضغط على الزر للمحاولة مرة أخرى.");
           return;
         }
         hideAuthPrompt();
@@ -193,7 +190,7 @@
         const rawMsg = String(err?.message || err || "").toLowerCase();
         const friendly = rawMsg.includes("popup")
           ? "تم حظر نافذة تسجيل الدخول. من فضلك اسمح بالنوافذ المنبثقة (Popups) وحاول مجدداً."
-          : "لم يكتمل الاتصال. اضغط مرة أخرى للمتابعة السريعة مجاناً (ضيف أو حساب Google).";
+          : "لم يكتمل تسجيل الدخول. اضغط مرة أخرى للمتابعة بحساب Google أو Puter مجاناً.";
         showAuthPrompt(friendly);
       });
   }
@@ -888,11 +885,11 @@
       return;
     }
 
-    // User-Pays gate: trigger instant guest/quick sign-in synchronously inside user submit gesture
+    // User-Pays gate: show the sign-in card; the user's click on its button opens Puter sign-in
     if (!isUserSignedIn()) {
       setFaqCollapsed(true);
       pendingMessage = userText;
-      triggerPuterSignIn({ attemptTempUser: true });
+      showAuthPrompt();
       return;
     }
 
@@ -1036,15 +1033,15 @@
         <div id="alexChatMessages" class="alex-chat-messages"></div>
 
         <div id="alexChatAuthCard" class="alex-chat-auth-card" hidden>
-          <p class="alex-chat-auth-title">تفعيل سريع ومجاني للأسئلة المفتوحة</p>
+          <p class="alex-chat-auth-title">تسجيل دخول مجاني للأسئلة المفتوحة</p>
           <p class="alex-chat-auth-desc">
-            الأسئلة الشائعة متاحة فوراً! للأسئلة المفتوحة والمحادثة الذكية، اضغط للمتابعة السريعة مجاناً (كدخول ضيف تلقائي أو بحساب Google / Puter).
+            الأسئلة الشائعة متاحة بدون تسجيل دخول! للأسئلة المفتوحة، اضغط الزر وسجّل الدخول مجاناً بحساب Google أو Puter في النافذة اللي هتفتح.
           </p>
-          <p class="alex-chat-auth-subdesc">FAQs work instantly. Open-ended AI answers use quick free Guest or Google/Puter access.</p>
+          <p class="alex-chat-auth-subdesc">FAQs work without sign-in. For open-ended questions, click below and sign in free with Google or Puter in the window that opens.</p>
           <p id="alexChatAuthError" class="alex-chat-auth-error" hidden></p>
           <div class="alex-chat-auth-actions">
             <button type="button" id="alexChatSignInBtn" class="alex-chat-signin-btn">
-              متابعة سريعة (ضيف / Google)
+              تسجيل الدخول (Google / Puter)
             </button>
             <button type="button" id="alexChatAuthDismiss" class="alex-chat-auth-dismiss">إلغاء</button>
           </div>
@@ -1164,14 +1161,9 @@
       setFaqCollapsed(!currentlyCollapsed);
     });
     dom.authPill?.addEventListener("click", () =>
-      triggerPuterSignIn({
-        attemptTempUser: !isUserSignedIn(),
-        requestAuth: isUserSignedIn(),
-      })
+      triggerPuterSignIn({ requestAuth: isUserSignedIn() })
     );
-    dom.signInBtn?.addEventListener("click", () =>
-      triggerPuterSignIn({ attemptTempUser: true })
-    );
+    dom.signInBtn?.addEventListener("click", () => triggerPuterSignIn());
     dom.authDismissBtn?.addEventListener("click", () => {
       pendingMessage = null;
       hideAuthPrompt();
