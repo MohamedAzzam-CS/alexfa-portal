@@ -713,7 +713,6 @@
     const questionText = cachedItem?.question || `سؤال #${numericId}`;
 
     hideAuthPrompt();
-    setFaqCollapsed(true);
     const activeNonce = sessionNonce;
 
     // Render user question bubble immediately
@@ -809,7 +808,6 @@
     if (!userText || isBusy) return;
 
     hideAuthPrompt();
-    setFaqCollapsed(true);
     const activeNonce = sessionNonce;
 
     appendMessage("user", userText);

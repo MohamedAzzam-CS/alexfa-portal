@@ -1134,6 +1134,7 @@ section {
 
 .footer-brand .brand-header img {
   height: 44px;
+  width: auto;
 }
 
 .footer-brand .brand-header span {
