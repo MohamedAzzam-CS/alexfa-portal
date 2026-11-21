@@ -1128,13 +1128,15 @@ section {
 .footer-brand .brand-header {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 18px;
   margin-bottom: 18px;
 }
 
 .footer-brand .brand-header img {
-  height: 44px;
+  height: 76px;
   width: auto;
+  transform: scale(1.55);
+  transform-origin: center;
 }
 
 .footer-brand .brand-header span {
