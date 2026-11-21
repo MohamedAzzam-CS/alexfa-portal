@@ -130,6 +130,77 @@ function initNavbarScroll() {
   checkScroll();
 }
 
+// ===== On-Demand High-Res PC Image Upgrade (On Zoom or Long-Press/Download) =====
+function initHighResImageUpgrade() {
+  let allUpgraded = false;
+
+  const upgradePicture = (pictureEl) => {
+    if (!pictureEl || pictureEl.dataset.pcUpgraded === 'true') return;
+    pictureEl.querySelectorAll('source').forEach((source) => {
+      source.removeAttribute('srcset');
+      source.setAttribute('media', 'not all');
+      source.remove();
+    });
+    pictureEl.dataset.pcUpgraded = 'true';
+  };
+
+  const upgradeAllPictures = () => {
+    if (allUpgraded) return;
+    allUpgraded = true;
+    document.querySelectorAll('picture').forEach(upgradePicture);
+  };
+
+  // 1. Pinch-to-zoom / browser zoom detection via VisualViewport API
+  if (window.visualViewport) {
+    const checkZoom = () => {
+      if (window.visualViewport.scale > 1.05) {
+        upgradeAllPictures();
+      }
+    };
+    window.visualViewport.addEventListener('resize', checkZoom, { passive: true });
+  }
+
+  // 2. Two-finger pinch gesture start on touch devices
+  window.addEventListener(
+    'touchstart',
+    (e) => {
+      if (e.touches && e.touches.length >= 2) {
+        upgradeAllPictures();
+      }
+    },
+    { passive: true }
+  );
+
+  // 3. Long-press (before mobile "Download/Save image" menu opens), right-click, or drag
+  let pressTimer = null;
+  document.addEventListener(
+    'touchstart',
+    (e) => {
+      const pic = e.target.closest && e.target.closest('picture');
+      if (!pic || pic.dataset.pcUpgraded === 'true') return;
+      clearTimeout(pressTimer);
+      // Upgrade at 160ms so the PC image is active before the ~500ms native context menu opens
+      pressTimer = setTimeout(() => upgradePicture(pic), 160);
+    },
+    { passive: true }
+  );
+
+  ['touchmove', 'touchend', 'touchcancel'].forEach((evt) => {
+    document.addEventListener(evt, () => clearTimeout(pressTimer), { passive: true });
+  });
+
+  ['contextmenu', 'dragstart'].forEach((evt) => {
+    document.addEventListener(
+      evt,
+      (e) => {
+        const pic = e.target.closest && e.target.closest('picture');
+        if (pic) upgradePicture(pic);
+      },
+      { capture: true, passive: true }
+    );
+  });
+}
+
 // ===== Initialize =====
 document.addEventListener('DOMContentLoaded', () => {
   initMobileMenu();
@@ -137,4 +208,5 @@ document.addEventListener('DOMContentLoaded', () => {
   initCommitteesSlider();
   animateCounters();
   initNavbarScroll();
+  initHighResImageUpgrade();
 });
