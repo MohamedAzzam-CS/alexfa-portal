@@ -8,9 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Poppins:wght@600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css">
-  <link rel="stylesheet" href="chat-widget.css">
-</head>
+  <link rel="stylesheet" href="css/style.css"></head>
 <body>
 
   <!-- Navbar -->
@@ -19,7 +17,7 @@
       <a href="index.html" class="navbar-logo">
         <picture>
           <source media="(max-width: 768px)" srcset="assets/mobile/logo-DX3b3OH2.webp">
-          <img src="assets/pc/logo-DX3b3OH2.webp" alt="Alexanders Logo">
+          <img src="assets/pc/logo-DX3b3OH2.webp" alt="Alexanders Logo" width="1080" height="1080">
         </picture>
       </a>
       <div class="navbar-links">
@@ -74,7 +72,7 @@
         <div class="brand-header">
           <picture>
             <source media="(max-width: 768px)" srcset="assets/mobile/logo-DX3b3OH2.webp">
-            <img src="assets/pc/logo-DX3b3OH2.webp" alt="Alexanders" loading="lazy" decoding="async">
+            <img src="assets/pc/logo-DX3b3OH2.webp" alt="Alexanders" loading="lazy" decoding="async" width="1080" height="1080">
           </picture>
           <span>ALEXANDERS</span>
         </div>
@@ -107,10 +105,44 @@
       </div>
     </div>
   </footer>
-
   <script src="js/main.js"></script>
-  <script src="https://js.puter.com/v2/"></script>
-  <script type="module" src="chat-widget.js"></script>
+  <script>
+    (() => {
+      let loaded = false;
+      const loadChat = () => {
+        if (loaded) return;
+        loaded = true;
+
+        const css = document.createElement("link");
+        css.rel = "stylesheet";
+        css.href = "chat-widget.css";
+        document.head.appendChild(css);
+
+        const puter = document.createElement("script");
+        puter.src = "https://js.puter.com/v2/";
+        puter.onload = () => {
+          const widget = document.createElement("script");
+          widget.type = "module";
+          widget.src = "chat-widget.js";
+          document.body.appendChild(widget);
+        };
+        puter.onerror = () => {
+          const widget = document.createElement("script");
+          widget.type = "module";
+          widget.src = "chat-widget.js";
+          document.body.appendChild(widget);
+        };
+        document.body.appendChild(puter);
+      };
+
+      ["pointerdown", "keydown", "touchstart"].forEach(type => {
+        window.addEventListener(type, loadChat, { once: true, passive: true });
+      });
+
+      const schedule = window.requestIdleCallback || (callback => setTimeout(callback, 1800));
+      schedule(loadChat, { timeout: 4000 });
+    })();
+  </script>
 </body>
 </html>
 

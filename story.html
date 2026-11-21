@@ -9,9 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Poppins:wght@600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
-  <link rel="stylesheet" href="css/story.css">
-  <link rel="stylesheet" href="chat-widget.css">
-</head>
+  <link rel="stylesheet" href="css/story.css"></head>
 <body>
 
   <!-- Navbar -->
@@ -20,7 +18,7 @@
       <a href="index.html" class="navbar-logo">
         <picture>
           <source media="(max-width: 768px)" srcset="assets/mobile/logo-DX3b3OH2.webp">
-          <img src="assets/pc/logo-DX3b3OH2.webp" alt="Alexanders Logo">
+          <img src="assets/pc/logo-DX3b3OH2.webp" alt="Alexanders Logo" width="1080" height="1080">
         </picture>
       </a>
       <div class="navbar-links">
@@ -70,7 +68,7 @@
           <div class="timeline-image" style="position: relative;">
             <picture>
               <source media="(max-width: 768px)" srcset="assets/mobile/STR1-DBpUT5aE.webp">
-              <img src="assets/pc/STR1-DBpUT5aE.webp" alt="البداية" loading="lazy" decoding="async">
+              <img src="assets/pc/STR1-DBpUT5aE.webp" alt="البداية" loading="lazy" decoding="async" width="1586" height="672">
             </picture>
             <span class="image-label">البداية</span>
           </div>
@@ -87,7 +85,7 @@
           <div class="timeline-image" style="position: relative;">
             <picture>
               <source media="(max-width: 768px)" srcset="assets/mobile/STR2-sMj_t6iV.webp">
-              <img src="assets/pc/STR2-sMj_t6iV.webp" alt="أول لقاء" loading="lazy" decoding="async">
+              <img src="assets/pc/STR2-sMj_t6iV.webp" alt="أول لقاء" loading="lazy" decoding="async" width="1376" height="768">
             </picture>
             <span class="image-label">أول لقاء</span>
           </div>
@@ -104,7 +102,7 @@
           <div class="timeline-image" style="position: relative;">
             <picture>
               <source media="(max-width: 768px)" srcset="assets/mobile/STR3-BGMWuhCy.webp">
-              <img src="assets/pc/STR3-BGMWuhCy.webp" alt="مرحلة النمو" loading="lazy" decoding="async">
+              <img src="assets/pc/STR3-BGMWuhCy.webp" alt="مرحلة النمو" loading="lazy" decoding="async" width="932" height="488">
             </picture>
             <span class="image-label">مرحلة النمو</span>
           </div>
@@ -121,7 +119,7 @@
           <div class="timeline-image" style="position: relative;">
             <picture>
               <source media="(max-width: 768px)" srcset="assets/mobile/STR4-BmzCmt2l.webp">
-              <img src="assets/pc/STR4-BmzCmt2l.webp" alt="اليوم والرؤية" loading="lazy" decoding="async">
+              <img src="assets/pc/STR4-BmzCmt2l.webp" alt="اليوم والرؤية" loading="lazy" decoding="async" width="1584" height="672">
             </picture>
             <span class="image-label">اليوم والرؤية</span>
           </div>
@@ -138,7 +136,7 @@
           <div class="timeline-image" style="position: relative;">
             <picture>
               <source media="(max-width: 768px)" srcset="assets/mobile/STR5-BVWfzAWT.webp">
-              <img src="assets/pc/STR5-BVWfzAWT.webp" alt="أثر ممتد" loading="lazy" decoding="async">
+              <img src="assets/pc/STR5-BVWfzAWT.webp" alt="أثر ممتد" loading="lazy" decoding="async" width="2048" height="1536">
             </picture>
             <span class="image-label">أثر ممتد</span>
           </div>
@@ -155,7 +153,7 @@
           <div class="timeline-image" style="position: relative;">
             <picture>
               <source media="(max-width: 768px)" srcset="assets/mobile/post-6-Bfh2J0_8.webp">
-              <img src="assets/pc/post-6-Bfh2J0_8.webp" alt="المستقبل يبدأ الآن" loading="lazy" decoding="async">
+              <img src="assets/pc/post-6-Bfh2J0_8.webp" alt="المستقبل يبدأ الآن" loading="lazy" decoding="async" width="1290" height="724">
             </picture>
             <span class="image-label">المستقبل يبدأ الآن</span>
           </div>
@@ -177,7 +175,7 @@
         <div class="brand-header">
           <picture>
             <source media="(max-width: 768px)" srcset="assets/mobile/logo-DX3b3OH2.webp">
-            <img src="assets/pc/logo-DX3b3OH2.webp" alt="Alexanders" loading="lazy" decoding="async">
+            <img src="assets/pc/logo-DX3b3OH2.webp" alt="Alexanders" loading="lazy" decoding="async" width="1080" height="1080">
           </picture>
           <span>ALEXANDERS</span>
         </div>
@@ -210,10 +208,43 @@
       </div>
     </div>
   </footer>
-
-
   <script src="js/main.js"></script>
-  <script src="https://js.puter.com/v2/"></script>
-  <script type="module" src="chat-widget.js"></script>
+  <script>
+    (() => {
+      let loaded = false;
+      const loadChat = () => {
+        if (loaded) return;
+        loaded = true;
+
+        const css = document.createElement("link");
+        css.rel = "stylesheet";
+        css.href = "chat-widget.css";
+        document.head.appendChild(css);
+
+        const puter = document.createElement("script");
+        puter.src = "https://js.puter.com/v2/";
+        puter.onload = () => {
+          const widget = document.createElement("script");
+          widget.type = "module";
+          widget.src = "chat-widget.js";
+          document.body.appendChild(widget);
+        };
+        puter.onerror = () => {
+          const widget = document.createElement("script");
+          widget.type = "module";
+          widget.src = "chat-widget.js";
+          document.body.appendChild(widget);
+        };
+        document.body.appendChild(puter);
+      };
+
+      ["pointerdown", "keydown", "touchstart"].forEach(type => {
+        window.addEventListener(type, loadChat, { once: true, passive: true });
+      });
+
+      const schedule = window.requestIdleCallback || (callback => setTimeout(callback, 1800));
+      schedule(loadChat, { timeout: 4000 });
+    })();
+  </script>
 </body>
 </html>
