@@ -71,7 +71,9 @@
     count: 0,
     limit: GUEST_LIMIT,
     remaining: GUEST_LIMIT,
+    resetInSeconds: 0,
   };
+  let quotaResetTimer = null;
   let currentUserProfile = null;
 
   // DOM references set on mount
@@ -279,6 +281,25 @@
     }
   }
 
+  function scheduleQuotaAutoReset(seconds = 60) {
+    if (quotaResetTimer) {
+      clearTimeout(quotaResetTimer);
+      quotaResetTimer = null;
+    }
+    if (isUserSignedIn() || guestQuota.count <= 0) return;
+    const waitMs = Math.max(1000, Number(seconds || 60) * 1000 + 250);
+    quotaResetTimer = setTimeout(() => {
+      guestQuota = {
+        count: 0,
+        limit: GUEST_LIMIT,
+        remaining: GUEST_LIMIT,
+        resetInSeconds: 0,
+      };
+      hideAuthPrompt();
+      refreshAuthUI();
+    }, waitMs);
+  }
+
   /**
    * Syncs initial guest quota and sessionId with the Cloudflare Worker.
    */
@@ -307,7 +328,11 @@
           remaining: Number(
             data.guestQuota.remaining ?? Math.max(0, GUEST_LIMIT - (data.guestQuota.count || 0))
           ),
+          resetInSeconds: Number(data.guestQuota.resetInSeconds || 0),
         };
+        if (guestQuota.count > 0) {
+          scheduleQuotaAutoReset(guestQuota.resetInSeconds || 60);
+        }
       }
       refreshAuthUI();
     } catch {
@@ -336,7 +361,7 @@
     dom.statusText.textContent =
       rem > 0
         ? `وضع الضيف • متبقي ${rem} من ${guestQuota.limit} رسائل`
-        : "انتهت الرسائل المجانية (0/5) • سجّل الدخول";
+        : "انتهت الـ 5 رسائل • تتجدد تلقائياً خلال دقيقة أو سجّل الدخول";
     dom.authPill.textContent = "تسجيل الدخول";
     dom.authPill.title = "تسجيل الدخول بحساب Puter لرسائل غير محدودة";
     dom.authPill.hidden = false;
@@ -852,7 +877,11 @@
           count: Number(data.guestQuota.count ?? guestQuota.count),
           limit: Number(data.guestQuota.limit ?? GUEST_LIMIT),
           remaining: Number(data.guestQuota.remaining ?? 0),
+          resetInSeconds: Number(data.guestQuota.resetInSeconds ?? 60),
         };
+        if (guestQuota.count > 0) {
+          scheduleQuotaAutoReset(guestQuota.resetInSeconds || 60);
+        }
       }
 
       // Handle 403 / 401 AUTH_REQUIRED (5-message guest limit reached or expired Puter token)
@@ -864,8 +893,7 @@
         assistantNode?.msgEl.remove();
         await refreshAuthUI();
         showAuthPrompt(
-          data.message ||
-            "وصلت للحد الأقصى للرسائل المجانية كزائر (5 رسائل). سجّل الدخول مجاناً عبر Puter للمتابعة."
+          "وصلت لحد الـ 5 رسائل المتتالية كزائر. انتظر دقيقة واحدة ليتم تجديد 5 رسائل جديدة تلقائياً، أو سجّل الدخول عبر Puter للمتابعة فوراً بلا حدود."
         );
         return;
       }

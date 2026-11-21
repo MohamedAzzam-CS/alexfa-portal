@@ -84,6 +84,7 @@ async function handleGetQuota(request, env, url) {
       count: quota.count,
       limit: GUEST_MESSAGE_LIMIT,
       remaining: quota.remaining,
+      resetInSeconds: quota.resetInSeconds || 0,
     },
   });
 }
@@ -243,6 +244,7 @@ async function handleChatRequest(request, env, ctx) {
         count: quotaState.count,
         limit: GUEST_MESSAGE_LIMIT,
         remaining: quotaState.remaining,
+        resetInSeconds: quotaState.resetInSeconds || 0,
       },
     });
   }
@@ -316,6 +318,7 @@ async function handleChatRequest(request, env, ctx) {
             count: quotaState.count,
             limit: GUEST_MESSAGE_LIMIT,
             remaining: 0,
+            resetInSeconds: quotaState.resetInSeconds || 60,
           },
         },
         403
@@ -440,6 +443,7 @@ async function handleChatRequest(request, env, ctx) {
         count: updatedQuota.count,
         limit: GUEST_MESSAGE_LIMIT,
         remaining: updatedQuota.remaining,
+        resetInSeconds: updatedQuota.resetInSeconds || 0,
       },
     },
     200,

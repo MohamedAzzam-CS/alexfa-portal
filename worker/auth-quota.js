@@ -1,12 +1,16 @@
 // ============================================================================
-// Server-Side 5-Message Guest Quota & Puter Auth Token Validator
-// Uses HMAC-SHA256 signed HttpOnly cookies + Cloudflare KV (GUEST_QUOTA_KV)
+// Server-Side 5-Message Per-Device Guest Quota (1-Minute Auto-Reset)
+// & Puter Auth Token Validator
+// - Scoped per device (sessionId + signed HttpOnly cookie), NOT shared across
+//   the same home Wi-Fi / IP, so every device in the same home gets fresh 5 messages.
+// - Automatically resets to 0 (fresh 5 messages) after 60 seconds of waiting.
 // ============================================================================
 
 export const GUEST_MESSAGE_LIMIT = 5;
 export const GUEST_COOKIE_NAME = "guest_session";
-const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30; // 30 days
-const KV_QUOTA_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+export const GUEST_RESET_WINDOW_MS = 60 * 1000; // 1 minute auto-reset
+const COOKIE_MAX_AGE_SECONDS = 60; // 60 seconds
+const KV_QUOTA_TTL_SECONDS = 60; // 60 seconds (minimum Cloudflare KV TTL)
 
 // Local fallback store when running without KV bound in local dev
 const memoryQuotaMap = new Map();
@@ -43,7 +47,7 @@ async function getHmacKey(secret) {
 }
 
 /**
- * Computes a SHA-256 hex digest (used for privacy-preserving IP hashing & token cache keys).
+ * Computes a SHA-256 hex digest.
  */
 export async function sha256Hex(input) {
   const enc = new TextEncoder();
@@ -67,6 +71,7 @@ export async function signGuestCookiePayload(payload, secret) {
 
 /**
  * Verifies and decodes an HMAC-SHA256 signed guest_session cookie value.
+ * Automatically treats the cookie count as 0 if older than GUEST_RESET_WINDOW_MS (1 minute).
  */
 export async function verifyGuestCookiePayload(cookieVal, secret) {
   if (!cookieVal || typeof cookieVal !== "string" || !cookieVal.includes(".")) {
@@ -90,6 +95,11 @@ export async function verifyGuestCookiePayload(cookieVal, secret) {
     const jsonText = new TextDecoder().decode(fromBase64Url(payloadB64));
     const parsed = JSON.parse(jsonText);
     if (!parsed || typeof parsed.sid !== "string") return null;
+
+    const ageMs = Date.now() - Number(parsed.iat || 0);
+    if (ageMs >= GUEST_RESET_WINDOW_MS) {
+      return { ...parsed, count: 0, expired: true };
+    }
     return parsed;
   } catch {
     return null;
@@ -127,7 +137,6 @@ export function buildGuestSetCookieHeader(signedValue, requestUrl) {
     isLocalhost = false;
   }
 
-  // Always include HttpOnly; Secure; SameSite=Lax in production (omit Secure only on plain http://localhost so browser dev works)
   const parts = [
     `${GUEST_COOKIE_NAME}=${signedValue}`,
     "Path=/",
@@ -151,16 +160,33 @@ function sanitizeSessionId(rawSid) {
   return `anon_${crypto.randomUUID().replace(/-/g, "")}`;
 }
 
-async function kvGetCount(kv, key) {
-  if (!key) return 0;
-  if (kv) {
-    const record = await kv.get(key, { type: "json" });
-    return Number(record?.count || 0);
+async function kvGetQuotaRecord(kv, key) {
+  if (!key) return { count: 0, resetInSeconds: 0 };
+  const record = kv
+    ? await kv.get(key, { type: "json" })
+    : memoryQuotaMap.get(key) || null;
+
+  if (!record) return { count: 0, resetInSeconds: 0 };
+
+  const updatedAtMs = Number(record.updatedAtMs || Date.parse(record.updatedAt) || 0);
+  const elapsedMs = Date.now() - updatedAtMs;
+
+  // Auto-reset if 1 minute (60,000 ms) has elapsed since the last message
+  if ( !updatedAtMs || elapsedMs >= GUEST_RESET_WINDOW_MS) {
+    return { count: 0, resetInSeconds: 0 };
   }
-  return Number(memoryQuotaMap.get(key)?.count || 0);
+
+  const resetInSeconds = Math.max(
+    1,
+    Math.ceil((GUEST_RESET_WINDOW_MS - elapsedMs) / 1000)
+  );
+  return {
+    count: Number(record.count || 0),
+    resetInSeconds,
+  };
 }
 
-async function kvPutCount(kv, key, data) {
+async function kvPutQuotaRecord(kv, key, data) {
   if (!key) return;
   if (kv) {
     await kv.put(key, JSON.stringify(data), {
@@ -172,7 +198,9 @@ async function kvPutCount(kv, key, data) {
 }
 
 /**
- * Inspects current guest quota without incrementing.
+ * Inspects current per-device guest quota without incrementing.
+ * Notice: Tracked strictly per device (sessionId + cookie), NOT by shared home IP,
+ * and automatically resets 60 seconds after the last guest message.
  */
 export async function getGuestQuotaState(request, env, clientSessionId = null) {
   const kv = env.GUEST_QUOTA_KV || null;
@@ -184,67 +212,60 @@ export async function getGuestQuotaState(request, env, clientSessionId = null) {
     secret
   );
 
-  const sessionId = verifiedCookie?.sid
-    ? sanitizeSessionId(verifiedCookie.sid)
-    : sanitizeSessionId(clientSessionId);
-
-  const clientIp =
-    request.headers.get("CF-Connecting-IP") ||
-    request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim() ||
-    "0.0.0.0";
-  const ipHash = await sha256Hex(`ip:${clientIp}:${secret}`);
+  // Prefer the device's explicit sessionId or verified cookie sid
+  const sessionId = clientSessionId
+    ? sanitizeSessionId(clientSessionId)
+    : verifiedCookie?.sid
+      ? sanitizeSessionId(verifiedCookie.sid)
+      : sanitizeSessionId(null);
 
   const sessionKey = `guest:sid:${sessionId}`;
-  const ipKey = clientIp !== "0.0.0.0" ? `guest:ip:${ipHash}` : null;
+  const kvRecord = await kvGetQuotaRecord(kv, sessionKey);
 
-  const [sidCount, ipCount] = await Promise.all([
-    kvGetCount(kv, sessionKey),
-    ipKey ? kvGetCount(kv, ipKey) : Promise.resolve(0),
-  ]);
+  // Only combine cookieCount if the cookie belongs to the same device sessionId and hasn't expired
+  const cookieCount =
+    verifiedCookie && verifiedCookie.sid === sessionId && !verifiedCookie.expired
+      ? Number(verifiedCookie.count || 0)
+      : 0;
 
-  const cookieCount = Number(verifiedCookie?.count || 0);
-  const currentCount = Math.max(sidCount, ipCount, cookieCount);
+  const currentCount = Math.max(kvRecord.count, cookieCount);
   const remaining = Math.max(0, GUEST_MESSAGE_LIMIT - currentCount);
 
   return {
     sessionId,
-    ipHash,
     sessionKey,
-    ipKey,
     count: currentCount,
     limit: GUEST_MESSAGE_LIMIT,
     remaining,
+    resetInSeconds: currentCount > 0 ? kvRecord.resetInSeconds || 60 : 0,
     allowed: currentCount < GUEST_MESSAGE_LIMIT,
   };
 }
 
 /**
- * Atomically increments the guest counter in GUEST_QUOTA_KV and returns
- * the updated quota state + signed HttpOnly Set-Cookie header.
+ * Atomically increments the per-device guest counter in GUEST_QUOTA_KV (with 60s TTL)
+ * and returns the updated quota state + signed HttpOnly Set-Cookie header.
  */
 export async function incrementGuestQuota(request, env, quotaState) {
   const kv = env.GUEST_QUOTA_KV || null;
   const secret = env.COOKIE_SECRET || "alexanders-default-hmac-secret-key-2026";
   const nextCount = quotaState.count + 1;
-  const nowIso = new Date().toISOString();
+  const nowMs = Date.now();
 
   const payload = {
     sessionId: quotaState.sessionId,
-    ipHash: quotaState.ipHash,
     count: nextCount,
-    updatedAt: nowIso,
+    updatedAt: new Date(nowMs).toISOString(),
+    updatedAtMs: nowMs,
   };
 
-  await Promise.all([
-    kvPutCount(kv, quotaState.sessionKey, payload),
-    quotaState.ipKey ? kvPutCount(kv, quotaState.ipKey, payload) : Promise.resolve(),
-  ]);
+  await kvPutQuotaRecord(kv, quotaState.sessionKey, payload);
 
   const signedCookie = await signGuestCookiePayload(
     {
       sid: quotaState.sessionId,
       count: nextCount,
-      iat: Date.now(),
+      iat: nowMs,
     },
     secret
   );
@@ -254,6 +275,7 @@ export async function incrementGuestQuota(request, env, quotaState) {
     count: nextCount,
     limit: GUEST_MESSAGE_LIMIT,
     remaining: Math.max(0, GUEST_MESSAGE_LIMIT - nextCount),
+    resetInSeconds: 60,
     setCookieHeader: buildGuestSetCookieHeader(signedCookie, request.url),
   };
 }
@@ -327,7 +349,6 @@ export async function authenticatePuterRequest(request, env) {
     }
 
     const user = await resp.json();
-    // Reject temporary/anonymous Puter shadow sessions if they haven't signed in to a real account
     const userId = user?.uuid || user?.id || user?.sub || null;
     if (!userId || user?.is_temp === true) {
       return {
