@@ -310,6 +310,12 @@ section {
   box-shadow: 0 0 12px var(--accent-cyan);
 }
 
+.navbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 /* Theme Toggle Button */
 .theme-toggle {
   display: flex;
