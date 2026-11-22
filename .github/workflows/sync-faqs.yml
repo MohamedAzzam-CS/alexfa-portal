@@ -1,0 +1,89 @@
+name: Sync AI-Cleaned FAQs to Frontend
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync-faqs-to-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Fetch Live AI-Cleaned FAQs & Update chat-widget.js
+        run: |
+          node << 'EOF'
+          const fs = require("fs");
+
+          async function main() {
+            const res = await fetch("https://alexanders-ai-api.sci-mohamedelsayed32561.workers.dev/api/faqs", {
+              headers: { Accept: "application/json" },
+            });
+            if (!res.ok) {
+              throw new Error(`Failed to fetch /api/faqs: HTTP ${res.status}`);
+            }
+            const data = await res.json();
+            if (!Array.isArray(data?.faqs) || data.faqs.length === 0) {
+              throw new Error("Received empty FAQ catalog from Worker.");
+            }
+
+            const compactItems = data.faqs.map((f, idx) => ({
+              id: Number(f.id) || idx + 1,
+              faqRef: f.faqRef || `faq-${idx + 1}`,
+              question: String(f.question || "").trim(),
+            }));
+
+            let widgetCode = fs.readFileSync("chat-widget.js", "utf8");
+
+            // 1. Update FAQ_CATALOG_VERSION
+            const versionStr = JSON.stringify(String(data.version || "2026-v1"));
+            widgetCode = widgetCode.replace(
+              /const FAQ_CATALOG_VERSION = "[^"]*";/,
+              `const FAQ_CATALOG_VERSION = ${versionStr};`
+            );
+
+            // 2. Update DEFAULT_FAQ_ITEMS array in chat-widget.js
+            const formattedArray =
+              "const DEFAULT_FAQ_ITEMS = [\n" +
+              compactItems
+                .map((it) => `    ${JSON.stringify(it)},`)
+                .join("\n") +
+              "\n  ];";
+
+            const arrayRe = /const DEFAULT_FAQ_ITEMS = \[[\s\S]*?\n  \];/;
+            if (!arrayRe.test(widgetCode)) {
+              throw new Error("Could not locate DEFAULT_FAQ_ITEMS block in chat-widget.js");
+            }
+            widgetCode = widgetCode.replace(arrayRe, formattedArray);
+
+            fs.writeFileSync("chat-widget.js", widgetCode, "utf8");
+            console.log(`Synced ${compactItems.length} AI-cleaned FAQs (version: ${data.version}) into chat-widget.js`);
+          }
+
+          main().catch((err) => {
+            console.error(err);
+            process.exit(1);
+          });
+          EOF
+
+      - name: Commit & Push Updated Frontend chat-widget.js
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add chat-widget.js
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(faqs): sync AI-cleaned FAQ catalog to frontend chat-widget.js"
+            git push origin main
+          else
+            echo "chat-widget.js is already up to date."
+          fi

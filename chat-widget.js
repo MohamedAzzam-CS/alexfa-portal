@@ -118,7 +118,7 @@
       const raw = localStorage.getItem(FAQ_CACHE_STORAGE_KEY);
       if (!raw) return null;
       const parsed = JSON.parse(raw);
-      if (parsed && Array.isArray(parsed.faqs) && parsed.faqs.length === 21) {
+      if (parsed && Array.isArray(parsed.faqs) && parsed.faqs.length > 0) {
         return parsed.faqs;
       }
     } catch {
@@ -720,7 +720,7 @@
   // ============================================================================
   async function dispatchFaqClick(faqId) {
     const numericId = Number(faqId);
-    if (!Number.isInteger(numericId) || numericId < 1 || numericId > 21 || isBusy) {
+    if (!Number.isInteger(numericId) || numericId < 1 || numericId > 200 || isBusy) {
       return;
     }
 

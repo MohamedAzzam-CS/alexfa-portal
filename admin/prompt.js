@@ -28,7 +28,17 @@ const el = {
   reloadBtn: document.getElementById("reloadPromptBtn"),
   saveBtn: document.getElementById("savePromptBtn"),
   logoutBtn: document.getElementById("promptLogoutBtn"),
+  // FAQ section refs
+  faqMetaInfo: document.getElementById("faqMetaInfo"),
+  faqItemsList: document.getElementById("faqItemsList"),
+  addFaqBtn: document.getElementById("addFaqBtn"),
+  reloadFaqsBtn: document.getElementById("reloadFaqsBtn"),
+  saveFaqsBtn: document.getElementById("saveFaqsBtn"),
+  faqSaveError: document.getElementById("faqSaveError"),
+  faqSaveResult: document.getElementById("faqSaveResult"),
 };
+
+let currentFaqs = [];
 
 async function checkPromptSession() {
   try {
@@ -157,10 +167,138 @@ async function handleLogout() {
   el.loginOverlay.hidden = false;
 }
 
+function renderFaqEditorList() {
+  if (!el.faqItemsList) return;
+  el.faqItemsList.innerHTML = "";
+
+  currentFaqs.forEach((item, idx) => {
+    const card = document.createElement("div");
+    card.style.cssText =
+      "background:rgba(255,255,255,0.03);border:1px solid var(--studio-border);border-radius:12px;padding:14px;";
+
+    const topRow = document.createElement("div");
+    topRow.style.cssText =
+      "display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;";
+
+    const badge = document.createElement("strong");
+    badge.style.cssText = "font-size:0.84rem;color:var(--studio-accent);";
+    badge.textContent = `سؤال #${idx + 1} (${item.faqRef || `faq-${idx + 1}`})`;
+
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "studio-btn studio-btn--danger";
+    delBtn.style.padding = "4px 10px";
+    delBtn.textContent = "حذف";
+    delBtn.addEventListener("click", () => {
+      currentFaqs.splice(idx, 1);
+      renderFaqEditorList();
+    });
+
+    topRow.appendChild(badge);
+    topRow.appendChild(delBtn);
+
+    const qInput = document.createElement("input");
+    qInput.type = "text";
+    qInput.className = "studio-input";
+    qInput.dir = "auto";
+    qInput.placeholder = "نص السؤال...";
+    qInput.value = item.question || "";
+    qInput.style.marginBottom = "8px";
+    qInput.addEventListener("input", () => {
+      currentFaqs[idx].question = qInput.value;
+    });
+
+    const aInput = document.createElement("textarea");
+    aInput.className = "studio-textarea";
+    aInput.dir = "auto";
+    aInput.rows = 3;
+    aInput.placeholder = "الإجابة (تدعم Markdown والروابط)...";
+    aInput.value = item.answer || "";
+    aInput.addEventListener("input", () => {
+      currentFaqs[idx].answer = aInput.value;
+    });
+
+    card.appendChild(topRow);
+    card.appendChild(qInput);
+    card.appendChild(aInput);
+    el.faqItemsList.appendChild(card);
+  });
+}
+
+async function loadCurrentFaqs() {
+  el.faqSaveError.hidden = true;
+  el.faqSaveResult.hidden = true;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/cms/faqs`, {
+      method: "GET",
+      credentials: "include",
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) {
+      el.promptApp.hidden = true;
+      el.loginOverlay.hidden = false;
+      return;
+    }
+    if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+
+    currentFaqs = Array.isArray(data.faqs) ? data.faqs.map((f) => ({ ...f })) : [];
+    el.faqMetaInfo.textContent = data.updatedAt
+      ? `عدد الأسئلة: ${currentFaqs.length} | آخر تحديث: ${data.updatedAt} (${data.source})`
+      : `عدد الأسئلة: ${currentFaqs.length} (الإعداد الافتراضي)`;
+    renderFaqEditorList();
+  } catch (err) {
+    el.faqSaveError.textContent = err?.message || "تعذر تحميل الأسئلة الشائعة.";
+    el.faqSaveError.hidden = false;
+  }
+}
+
+async function handleSaveFaqs() {
+  el.faqSaveError.hidden = true;
+  el.faqSaveResult.hidden = true;
+  el.saveFaqsBtn.disabled = true;
+  el.saveFaqsBtn.textContent = "✨ جاري المراجعة بالـ AI وتشغيل التحديث...";
+
+  try {
+    const res = await fetch(`${API_BASE}/api/cms/faqs`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ faqs: currentFaqs }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) {
+      el.promptApp.hidden = true;
+      el.loginOverlay.hidden = false;
+      return;
+    }
+    if (!res.ok || !data?.ok) {
+      throw new Error(data?.message || `HTTP ${res.status}`);
+    }
+
+    currentFaqs = Array.isArray(data.faqs) ? data.faqs : currentFaqs;
+    renderFaqEditorList();
+
+    const wfNote = data.workflowDispatched
+      ? "وتم تشغيل GitHub Workflow تلقائياً لتحديث الواجهة الأمامية (chat-widget.js)!"
+      : "تم الحفظ في الخادم بنجاح (تأكد من صلاحية Actions: Write في GITHUB_TOKEN لتشغيل الـ Workflow تلقائياً).";
+
+    el.faqMetaInfo.textContent = `عدد الأسئلة: ${currentFaqs.length} | آخر تحديث: ${data.updatedAt} (تمت مراجعة ${data.aiCleanedCount} سؤال بالـ AI)`;
+    el.faqSaveResult.textContent = `✅ تمت المراجعة والتنظيف بالذكاء الاصطناعي وحفظ ${currentFaqs.length} سؤال في الخادم، ${wfNote}`;
+    el.faqSaveResult.hidden = false;
+  } catch (err) {
+    el.faqSaveError.textContent = err?.message || "فشل حفظ الأسئلة الشائعة.";
+    el.faqSaveError.hidden = false;
+  } finally {
+    el.saveFaqsBtn.disabled = false;
+    el.saveFaqsBtn.textContent = "✨ مراجعة بالـ AI وحفظ وتحديث الموقع";
+  }
+}
+
 async function enterPromptApp() {
   el.loginOverlay.hidden = true;
   el.promptApp.hidden = false;
-  await loadCurrentPrompt();
+  await Promise.all([loadCurrentPrompt(), loadCurrentFaqs()]);
 }
 
 async function boot() {
@@ -168,6 +306,18 @@ async function boot() {
   el.saveBtn.addEventListener("click", handleSavePrompt);
   el.reloadBtn.addEventListener("click", loadCurrentPrompt);
   el.logoutBtn.addEventListener("click", handleLogout);
+
+  el.addFaqBtn.addEventListener("click", () => {
+    currentFaqs.push({
+      id: currentFaqs.length + 1,
+      faqRef: `faq-${currentFaqs.length + 1}`,
+      question: "",
+      answer: "",
+    });
+    renderFaqEditorList();
+  });
+  el.reloadFaqsBtn.addEventListener("click", loadCurrentFaqs);
+  el.saveFaqsBtn.addEventListener("click", handleSaveFaqs);
 
   const ok = await checkPromptSession();
   if (ok) {

@@ -104,6 +104,30 @@
         <button id="savePromptBtn" type="button" class="studio-btn studio-btn--primary">💾 حفظ وتفعيل مباشر (بدون PR)</button>
       </div>
     </section>
+
+    <!-- 3. Dedicated FAQ Section (AI Cleanup Pass -> KV Save -> GitHub Actions Frontend Sync) -->
+    <section class="prompt-card" style="margin-top: 24px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
+        <div>
+          <h2 style="font-size:1.2rem;font-weight:800;color:var(--studio-accent);margin-bottom:4px;">💬 إدارة الأسئلة الشائعة (FAQ)</h2>
+          <p style="font-size:0.84rem;color:var(--studio-muted);">
+            عند الحفظ، يمر كل سؤال وإجابة بمرحلة مراجعة وتنظيف سريعة بالذكاء الاصطناعي (AI Cleanup Pass)، ثم يُحفظ في الخادم ويشغّل تلقائياً الـ Workflow لتحديث الواجهة الأمامية.
+          </p>
+        </div>
+        <button id="addFaqBtn" type="button" class="studio-btn">+ إضافة سؤال جديد</button>
+      </div>
+
+      <div id="faqMetaInfo" class="prompt-meta"></div>
+      <div id="faqItemsList" style="display:flex;flex-direction:column;gap:14px;margin-bottom:16px;"></div>
+
+      <div id="faqSaveError" class="studio-error" hidden></div>
+      <div id="faqSaveResult" class="studio-pr-result" hidden></div>
+
+      <div class="studio-modal-actions">
+        <button id="reloadFaqsBtn" type="button" class="studio-btn">↻ إعادة تحميل الأسئلة</button>
+        <button id="saveFaqsBtn" type="button" class="studio-btn studio-btn--primary">✨ مراجعة بالـ AI وحفظ وتحديث الموقع</button>
+      </div>
+    </section>
   </main>
 
   <script type="module" src="prompt.js"></script>
