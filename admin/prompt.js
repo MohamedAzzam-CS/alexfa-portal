@@ -38,13 +38,34 @@ const el = {
   faqSaveResult: document.getElementById("faqSaveResult"),
 };
 
+const PROMPT_TOKEN_KEY = "alex_cms_prompt_token";
 let currentFaqs = [];
+
+function getPromptAuthHeaders(extra = {}) {
+  const headers = { ...extra };
+  try {
+    const tok = sessionStorage.getItem(PROMPT_TOKEN_KEY);
+    if (tok) headers.Authorization = `Bearer ${tok}`;
+  } catch {
+    // ignore
+  }
+  return headers;
+}
+
+function clearPromptToken() {
+  try {
+    sessionStorage.removeItem(PROMPT_TOKEN_KEY);
+  } catch {
+    // ignore
+  }
+}
 
 async function checkPromptSession() {
   try {
     const res = await fetch(`${API_BASE}/api/cms/prompt/session`, {
       method: "GET",
       credentials: "include",
+      headers: getPromptAuthHeaders(),
     });
     const data = await res.json().catch(() => ({}));
     return Boolean(res.ok && data?.authenticated);
@@ -75,6 +96,14 @@ async function handleLogin(e) {
       return;
     }
 
+    if (data.token) {
+      try {
+        sessionStorage.setItem(PROMPT_TOKEN_KEY, data.token);
+      } catch {
+        // ignore
+      }
+    }
+
     el.adminPasswordInput.value = "";
     await enterPromptApp();
   } catch {
@@ -93,9 +122,11 @@ async function loadCurrentPrompt() {
     const res = await fetch(`${API_BASE}/api/cms/prompt`, {
       method: "GET",
       credentials: "include",
+      headers: getPromptAuthHeaders(),
     });
     const data = await res.json().catch(() => ({}));
     if (res.status === 401) {
+      clearPromptToken();
       el.promptApp.hidden = true;
       el.loginOverlay.hidden = false;
       return;
@@ -125,7 +156,7 @@ async function handleSavePrompt() {
     const res = await fetch(`${API_BASE}/api/cms/prompt`, {
       method: "POST",
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
+      headers: getPromptAuthHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
         systemInstructions: el.instructionsInput.value,
         knowledgeBase: el.kbInput.value,
@@ -133,6 +164,7 @@ async function handleSavePrompt() {
     });
     const data = await res.json().catch(() => ({}));
     if (res.status === 401) {
+      clearPromptToken();
       el.promptApp.hidden = true;
       el.loginOverlay.hidden = false;
       return;
@@ -155,6 +187,7 @@ async function handleSavePrompt() {
 }
 
 async function handleLogout() {
+  clearPromptToken();
   try {
     await fetch(`${API_BASE}/api/cms/prompt/logout`, {
       method: "POST",
@@ -233,9 +266,11 @@ async function loadCurrentFaqs() {
     const res = await fetch(`${API_BASE}/api/cms/faqs`, {
       method: "GET",
       credentials: "include",
+      headers: getPromptAuthHeaders(),
     });
     const data = await res.json().catch(() => ({}));
     if (res.status === 401) {
+      clearPromptToken();
       el.promptApp.hidden = true;
       el.loginOverlay.hidden = false;
       return;
@@ -263,11 +298,12 @@ async function handleSaveFaqs() {
     const res = await fetch(`${API_BASE}/api/cms/faqs`, {
       method: "POST",
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
+      headers: getPromptAuthHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ faqs: currentFaqs }),
     });
     const data = await res.json().catch(() => ({}));
     if (res.status === 401) {
+      clearPromptToken();
       el.promptApp.hidden = true;
       el.loginOverlay.hidden = false;
       return;

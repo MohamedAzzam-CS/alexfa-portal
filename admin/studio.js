@@ -155,13 +155,35 @@ const el = {
 };
 
 // ============================================================================
-// 1. Editor Worker Authentication Gate
+// 1. Editor Worker Authentication Gate (Cookie + iOS-Safe sessionStorage Bearer)
 // ============================================================================
+const STUDIO_TOKEN_KEY = "alex_cms_editor_token";
+
+function getStudioAuthHeaders(extra = {}) {
+  const headers = { ...extra };
+  try {
+    const tok = sessionStorage.getItem(STUDIO_TOKEN_KEY);
+    if (tok) headers.Authorization = `Bearer ${tok}`;
+  } catch {
+    // ignore storage errors
+  }
+  return headers;
+}
+
+function clearStudioToken() {
+  try {
+    sessionStorage.removeItem(STUDIO_TOKEN_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 async function checkSession() {
   try {
     const res = await fetch(`${API_BASE}/api/cms/session`, {
       method: "GET",
       credentials: "include",
+      headers: getStudioAuthHeaders(),
     });
     const data = await res.json().catch(() => ({}));
     return Boolean(res.ok && data?.authenticated);
@@ -192,6 +214,14 @@ async function handleLoginSubmit(e) {
       return;
     }
 
+    if (data.token) {
+      try {
+        sessionStorage.setItem(STUDIO_TOKEN_KEY, data.token);
+      } catch {
+        // ignore
+      }
+    }
+
     el.editorPasswordInput.value = "";
     await enterStudio();
   } catch {
@@ -203,6 +233,7 @@ async function handleLoginSubmit(e) {
 }
 
 async function handleLogout() {
+  clearStudioToken();
   try {
     await fetch(`${API_BASE}/api/cms/logout`, {
       method: "POST",
@@ -886,7 +917,7 @@ async function submitPullRequest() {
     const res = await fetch(`${API_BASE}/api/cms/submit`, {
       method: "POST",
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
+      headers: getStudioAuthHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
         summary: el.prSummaryInput.value.trim() || `Update ${files.length} file(s) via Visual Studio`,
         files,
@@ -895,6 +926,7 @@ async function submitPullRequest() {
 
     const data = await res.json().catch(() => ({}));
     if (res.status === 401) {
+      clearStudioToken();
       el.submitPrModal.hidden = true;
       el.studioApp.hidden = true;
       el.loginOverlay.hidden = false;
