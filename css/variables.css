@@ -1,4 +1,8 @@
 :root {
+  /* Typography */
+  --font-primary: 'Cairo', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Poppins', 'Cairo', sans-serif;
+
   /* Dark Theme (Default) - Deep Cyber Midnight */
   --bg-primary: #070a13;
   --bg-secondary: #0c1222;

@@ -1,0 +1,284 @@
+name: Validate CMS Data, HTML & Auto-Optimize Uploaded Images
+
+on:
+  pull_request:
+    paths:
+      - "*.html"
+      - "css/variables.css"
+      - "data/**/*.json"
+      - "assets/pc/**"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  validate-and-optimize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR Branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Sharp (Runner-Only Image Processor)
+        run: npm install --no-save sharp
+
+      - name: Validate JSON, HTML, Links, Alt Text & Generate Mobile WebP Variants
+        run: |
+          node << 'EOF'
+          const fs = require("fs");
+          const path = require("path");
+          const sharp = require("sharp");
+
+          const errors = [];
+          let repoModified = false;
+
+          function normalizePath(p) {
+            return String(p || "").trim().replace(/^\/+/, "");
+          }
+
+          function validateUrl(val, context) {
+            if (!val) return;
+            const str = String(val).trim();
+            if (/^(javascript|data|vbscript):/i.test(str)) {
+              errors.push(`${context}: Disallowed URL protocol in "${str}"`);
+              return;
+            }
+            if (/^https?:\/\//i.test(str)) {
+              try {
+                new URL(str);
+              } catch {
+                errors.push(`${context}: Malformed URL "${str}"`);
+              }
+            }
+          }
+
+          async function ensureMobileVariant(pcPath) {
+            if (!pcPath.startsWith("assets/pc/") || !fs.existsSync(pcPath)) return null;
+            const ext = path.extname(pcPath).toLowerCase();
+            if (![".webp", ".png", ".jpg", ".jpeg"].includes(ext)) return null;
+
+            const baseName = path.basename(pcPath, ext);
+            const mobileRelPath = `assets/mobile/${baseName}.webp`;
+            fs.mkdirSync("assets/mobile", { recursive: true });
+
+            const pcStat = fs.statSync(pcPath);
+            const mobileExists = fs.existsSync(mobileRelPath);
+            const mobileOlder = mobileExists && fs.statSync(mobileRelPath).mtimeMs < pcStat.mtimeMs;
+
+            if (!mobileExists || mobileOlder) {
+              await sharp(pcPath)
+                .resize({ width: 480, withoutEnlargement: true })
+                .webp({ quality: 82 })
+                .toFile(mobileRelPath);
+              console.log(`Generated mobile variant: ${mobileRelPath}`);
+              repoModified = true;
+            }
+            return mobileRelPath;
+          }
+
+          async function processJsonImageItem(item, context, needsMobileVariant) {
+            if (!item || typeof item !== "object") {
+              errors.push(`${context}: Item must be an object`);
+              return false;
+            }
+
+            let changed = false;
+            if (!String(item.alt || "").trim()) {
+              errors.push(`${context}: Missing required "alt" text for accessibility`);
+            }
+
+            const rawImg = normalizePath(item.image);
+            if (!rawImg) {
+              errors.push(`${context}: Missing required "image" path`);
+              return false;
+            }
+            if (item.image !== rawImg) {
+              item.image = rawImg;
+              changed = true;
+            }
+
+            if (/^https?:\/\//i.test(rawImg)) {
+              validateUrl(rawImg, context);
+              return changed;
+            }
+
+            if (!fs.existsSync(rawImg)) {
+              errors.push(`${context}: Referenced image does not exist: "${rawImg}"`);
+              return changed;
+            }
+
+            const meta = await sharp(rawImg).metadata();
+            if (meta.width && meta.height && (item.width !== meta.width || item.height !== meta.height)) {
+              item.width = meta.width;
+              item.height = meta.height;
+              changed = true;
+            }
+
+            if (needsMobileVariant) {
+              const mobilePath = await ensureMobileVariant(rawImg);
+              if (mobilePath && item.mobileImage !== mobilePath) {
+                item.mobileImage = mobilePath;
+                changed = true;
+              }
+            }
+            return changed;
+          }
+
+          async function validateAndEnrichHtmlFiles() {
+            const htmlFiles = fs.readdirSync(".").filter((f) => f.endsWith(".html"));
+            for (const file of htmlFiles) {
+              let html = fs.readFileSync(file, "utf8");
+              let htmlChanged = false;
+
+              // 1. Check all href attributes for malformed/disallowed links
+              for (const m of html.matchAll(/href="([^"]*)"/gi)) {
+                validateUrl(m[1], `${file} (href)`);
+              }
+
+              // 2. Check all <img> tags for alt text, valid local paths, dimensions & mobile variants
+              const imgMatches = [...html.matchAll(/<img\b([^>]*)>/gi)];
+              for (const match of imgMatches) {
+                const fullTag = match[0];
+                const attrs = match[1];
+                const srcMatch = attrs.match(/\bsrc="([^"?]+)(?:\?[^"]*)?"/i);
+                const altMatch = attrs.match(/\balt="([^"]*)"/i);
+
+                if (!altMatch || !altMatch[1].trim()) {
+                  errors.push(`${file}: <img> missing non-empty alt attribute (${fullTag.slice(0, 80)})`);
+                }
+                if (!srcMatch) continue;
+
+                const cleanSrc = normalizePath(srcMatch[1]);
+                if (/^https?:\/\//i.test(cleanSrc)) {
+                  validateUrl(cleanSrc, `${file} (img src)`);
+                  continue;
+                }
+                if (!fs.existsSync(cleanSrc)) {
+                  errors.push(`${file}: Referenced <img> file does not exist: "${cleanSrc}"`);
+                  continue;
+                }
+
+                // Auto-generate mobile variant for any assets/pc/ image
+                if (cleanSrc.startsWith("assets/pc/")) {
+                  const mobilePath = await ensureMobileVariant(cleanSrc);
+
+                  // Add missing intrinsic width/height for zero CLS
+                  const meta = await sharp(cleanSrc).metadata();
+                  let updatedAttrs = attrs;
+                  if (meta.width && !/\bwidth=/i.test(updatedAttrs)) {
+                    updatedAttrs += ` width="${meta.width}"`;
+                  }
+                  if (meta.height && !/\bheight=/i.test(updatedAttrs)) {
+                    updatedAttrs += ` height="${meta.height}"`;
+                  }
+
+                  const updatedTag = `<img${updatedAttrs}>`;
+                  if (updatedTag !== fullTag) {
+                    html = html.replace(fullTag, updatedTag);
+                    htmlChanged = true;
+                  }
+
+                  // Wrap bare <img src="assets/pc/..."> in <picture> with mobile <source> (except honor.html portraits)
+                  if (mobilePath && file !== "honor.html") {
+                    const escapedTag = updatedTag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                    const insidePictureRe = new RegExp(`<picture>[\\s\\S]*?${escapedTag}[\\s\\S]*?<\\/picture>`, "i");
+                    if (!insidePictureRe.test(html)) {
+                      const wrapped = `<picture><source media="(max-width: 768px)" srcset="${mobilePath}">${updatedTag}</picture>`;
+                      html = html.replace(updatedTag, wrapped);
+                      htmlChanged = true;
+                    }
+                  }
+                }
+              }
+
+              if (htmlChanged) {
+                fs.writeFileSync(file, html, "utf8");
+                repoModified = true;
+              }
+            }
+          }
+
+          async function main() {
+            // A. Generate mobile variants for any newly uploaded assets/pc/* files
+            if (fs.existsSync("assets/pc")) {
+              for (const f of fs.readdirSync("assets/pc")) {
+                await ensureMobileVariant(`assets/pc/${f}`);
+              }
+            }
+
+            // B. Validate & enrich data/*.json
+            if (fs.existsSync("data")) {
+              const jsonFiles = fs.readdirSync("data").filter((f) => f.endsWith(".json"));
+              for (const file of jsonFiles) {
+                const fullPath = path.join("data", file);
+                let parsed;
+                try {
+                  parsed = JSON.parse(fs.readFileSync(fullPath, "utf8"));
+                } catch (err) {
+                  errors.push(`${fullPath}: Invalid JSON syntax (${err.message})`);
+                  continue;
+                }
+
+                let jsonChanged = false;
+                if (file === "story.json" && Array.isArray(parsed.items)) {
+                  for (let i = 0; i < parsed.items.length; i++) {
+                    const it = parsed.items[i];
+                    if (!String(it.label || "").trim()) errors.push(`${fullPath}#items[${i}]: Missing "label"`);
+                    if (!String(it.text || "").trim()) errors.push(`${fullPath}#items[${i}]: Missing "text"`);
+                    if (await processJsonImageItem(it, `${fullPath}#items[${i}]`, true)) jsonChanged = true;
+                  }
+                }
+                if (file === "honor.json" && Array.isArray(parsed.members)) {
+                  for (let i = 0; i < parsed.members.length; i++) {
+                    const m = parsed.members[i];
+                    if (!String(m.name || "").trim()) errors.push(`${fullPath}#members[${i}]: Missing "name"`);
+                    if (!String(m.roleTitle || "").trim()) errors.push(`${fullPath}#members[${i}]: Missing "roleTitle"`);
+                    if (!String(m.committeeAr || "").trim()) errors.push(`${fullPath}#members[${i}]: Missing "committeeAr"`);
+                    if (await processJsonImageItem(m, `${fullPath}#members[${i}]`, false)) jsonChanged = true;
+                  }
+                }
+
+                if (jsonChanged) {
+                  fs.writeFileSync(fullPath, JSON.stringify(parsed, null, 2) + "\n", "utf8");
+                  repoModified = true;
+                }
+              }
+            }
+
+            // C. Validate & enrich root *.html files
+            await validateAndEnrichHtmlFiles();
+
+            if (errors.length > 0) {
+              console.error("❌ CMS PR Validation Failed:\n" + errors.map((e) => "  - " + e).join("\n"));
+              process.exit(1);
+            }
+
+            console.log("✅ All CMS JSON, HTML, links, alt texts, and dual-resolution assets validated cleanly.");
+          }
+
+          main().catch((err) => {
+            console.error(err);
+            process.exit(1);
+          });
+          EOF
+
+      - name: Commit Auto-Generated Mobile Assets & Dimensions to PR Branch
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/ assets/mobile/ *.html
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(cms): auto-generate mobile WebP variants and sync image dimensions"
+            git push origin HEAD:${{ github.head_ref }}
+          else
+            echo "No asset or dimension updates needed."
+          fi

@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Alexanders Visual Studio | المحرر المرئي</title>
+  <link rel="icon" href="../favicon.webp" type="image/webp">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Poppins:wght@600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/grapesjs@0.21.13/dist/css/grapes.min.css">
+  <link rel="stylesheet" href="studio.css">
+</head>
+<body>
+
+  <!-- 1. Protected Login Gate -->
+  <div id="studioLoginOverlay" class="studio-login-overlay">
+    <div class="studio-login-card">
+      <span class="studio-login-badge">Alexanders CMS Studio</span>
+      <h1>تسجيل دخول المحررين</h1>
+      <p>لا تحتاج لحساب GitHub. سجّل الدخول بكلمة مرور المحررين لتعديل الصفحات وإرسال طلب مراجعة (Pull Request).</p>
+      <div id="loginError" class="studio-error" hidden></div>
+      <form id="studioLoginForm">
+        <div class="studio-field">
+          <label for="editorNameInput">الاسم (يظهر في سجل المراجعة)</label>
+          <input id="editorNameInput" class="studio-input" type="text" placeholder="مثال: أحمد / لجنة الميديا" required>
+        </div>
+        <div class="studio-field">
+          <label for="editorPasswordInput">كلمة مرور المحررين</label>
+          <input id="editorPasswordInput" class="studio-input" type="password" placeholder="••••••••" required>
+        </div>
+        <button id="loginSubmitBtn" type="submit" class="studio-btn studio-btn--primary studio-btn--full">
+          دخول إلى المحرر المرئي
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- 2. Visual Editor Workspace -->
+  <div id="studioApp" class="studio-app" hidden>
+    <header class="studio-topbar">
+      <div class="studio-topbar-group">
+        <span class="studio-brand">✦ Alexanders Studio</span>
+        <select id="pageSelector" class="studio-select studio-page-select" aria-label="اختر الصفحة">
+          <option value="index.html">الرئيسية (index.html)</option>
+          <option value="about.html">من نحن (about.html)</option>
+          <option value="story.html">قصتنا (story.html)</option>
+          <option value="honor.html">لوحة الشرف (honor.html)</option>
+          <option value="committees.html">اللجان (committees.html)</option>
+          <option value="gallery.html">المعرض (gallery.html)</option>
+          <option value="join.html">انضم إلينا (join.html)</option>
+          <option value="privacy.html">الخصوصية (privacy.html)</option>
+          <option value="terms.html">الشروط (terms.html)</option>
+        </select>
+        <button id="newPageBtn" type="button" class="studio-btn">+ صفحة جديدة</button>
+        <button id="linkPickerBtn" type="button" class="studio-btn">🔗 ربط رابط</button>
+        <button id="themePanelBtn" type="button" class="studio-btn">🎨 الألوان والخطوط</button>
+      </div>
+
+      <div class="studio-topbar-group">
+        <span id="pendingBadge" class="studio-status-pill">0 تعديلات معلقة</span>
+        <button id="submitPrBtn" type="button" class="studio-btn studio-btn--primary">🚀 إرسال للمراجعة (PR)</button>
+        <button id="logoutBtn" type="button" class="studio-btn studio-btn--danger">خروج</button>
+      </div>
+    </header>
+
+    <div class="studio-workspace">
+      <div id="gjs"></div>
+
+      <!-- Theme & Typography Drawer (css/variables.css) -->
+      <aside id="themeDrawer" class="studio-drawer" hidden>
+        <div class="studio-drawer-header">
+          <h2>ألوان وخطوط الموقع</h2>
+          <button id="closeThemeDrawerBtn" type="button" class="studio-btn">✕</button>
+        </div>
+        <div class="studio-drawer-body">
+          <p style="font-size: 0.8rem; color: var(--studio-muted); margin-bottom: 12px;">
+            التعديلات هنا تحدّث ملف <code>css/variables.css</code> وتظهر فوراً في المعاينة.
+          </p>
+
+          <div class="studio-token-group-title">الخطوط (Typography)</div>
+          <div class="studio-field">
+            <label for="tokenFontPrimary">الخط الأساسي (العربي)</label>
+            <select id="tokenFontPrimary" class="studio-select">
+              <option value="'Cairo', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">Cairo (الافتراضي)</option>
+              <option value="'Tajawal', 'Cairo', system-ui, sans-serif">Tajawal</option>
+              <option value="'IBM Plex Sans Arabic', 'Cairo', system-ui, sans-serif">IBM Plex Sans Arabic</option>
+              <option value="system-ui, -apple-system, sans-serif">System UI</option>
+            </select>
+          </div>
+          <div class="studio-field">
+            <label for="tokenFontDisplay">خط العناوين الإنجليزية</label>
+            <select id="tokenFontDisplay" class="studio-select">
+              <option value="'Poppins', 'Cairo', sans-serif">Poppins (الافتراضي)</option>
+              <option value="'Inter', 'Cairo', sans-serif">Inter</option>
+              <option value="'Cairo', sans-serif">Cairo</option>
+            </select>
+          </div>
+
+          <div class="studio-token-group-title">الوضع الليلي (Dark Theme)</div>
+          <div class="studio-token-row">
+            <label for="darkBgPrimary">الخلفية الأساسية (--bg-primary)</label>
+            <input type="color" id="darkBgPrimary" data-theme-scope="dark" data-token="--bg-primary" value="#070a13">
+          </div>
+          <div class="studio-token-row">
+            <label for="darkBgSecondary">الخلفية الثانوية (--bg-secondary)</label>
+            <input type="color" id="darkBgSecondary" data-theme-scope="dark" data-token="--bg-secondary" value="#0c1222">
+          </div>
+          <div class="studio-token-row">
+            <label for="darkTextPrimary">لون النص الأساسي (--text-primary)</label>
+            <input type="color" id="darkTextPrimary" data-theme-scope="dark" data-token="--text-primary" value="#f8fafc">
+          </div>
+          <div class="studio-token-row">
+            <label for="darkAccentBlue">الأزرق الرئيسي (--accent-blue)</label>
+            <input type="color" id="darkAccentBlue" data-theme-scope="dark" data-token="--accent-blue" value="#3b82f6">
+          </div>
+          <div class="studio-token-row">
+            <label for="darkAccentCyan">السماوي المميز (--accent-cyan)</label>
+            <input type="color" id="darkAccentCyan" data-theme-scope="dark" data-token="--accent-cyan" value="#38bdf8">
+          </div>
+          <div class="studio-token-row">
+            <label for="darkAccentIndigo">البنفسجي المميز (--accent-indigo)</label>
+            <input type="color" id="darkAccentIndigo" data-theme-scope="dark" data-token="--accent-indigo" value="#818cf8">
+          </div>
+
+          <div class="studio-token-group-title">الوضع النهاري (Light Theme)</div>
+          <div class="studio-token-row">
+            <label for="lightBgPrimary">الخلفية الأساسية (--bg-primary)</label>
+            <input type="color" id="lightBgPrimary" data-theme-scope="light" data-token="--bg-primary" value="#f8fafc">
+          </div>
+          <div class="studio-token-row">
+            <label for="lightTextPrimary">لون النص الأساسي (--text-primary)</label>
+            <input type="color" id="lightTextPrimary" data-theme-scope="light" data-token="--text-primary" value="#0f172a">
+          </div>
+          <div class="studio-token-row">
+            <label for="lightAccentCyan">السماوي المميز (--accent-cyan)</label>
+            <input type="color" id="lightAccentCyan" data-theme-scope="light" data-token="--accent-cyan" value="#0284c7">
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- 3. Modal: Create New Custom Page -->
+  <div id="newPageModal" class="studio-modal-backdrop" hidden>
+    <div class="studio-modal">
+      <h3>إنشاء صفحة مخصصة جديدة</h3>
+      <p style="font-size: 0.84rem; color: var(--studio-muted); margin-bottom: 14px;">
+        ستحصل الصفحة تلقائياً على شريط التنقل (Navbar) والتذييل (Footer) وتصميم الموقع والوضع الليلي.
+      </p>
+      <div class="studio-field">
+        <label for="newPageTitle">عنوان الصفحة (بالعربية أو الإنجليزية)</label>
+        <input id="newPageTitle" class="studio-input" type="text" placeholder="مثال: فعاليات الصيف 2026">
+      </div>
+      <div class="studio-field">
+        <label for="newPageSlug">اسم الملف (Slug بالإنجليزية فقط)</label>
+        <input id="newPageSlug" class="studio-input" type="text" dir="ltr" placeholder="summer-events">
+      </div>
+      <div class="studio-modal-actions">
+        <button id="cancelNewPageBtn" type="button" class="studio-btn">إلغاء</button>
+        <button id="confirmNewPageBtn" type="button" class="studio-btn studio-btn--primary">إنشاء الصفحة</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Modal: Visual Link Picker -->
+  <div id="linkPickerModal" class="studio-modal-backdrop" hidden>
+    <div class="studio-modal">
+      <h3>اختيار رابط للعنصر المحدد</h3>
+      <p style="font-size: 0.84rem; color: var(--studio-muted); margin-bottom: 14px;">
+        حدد أي زر أو رابط داخل الصفحة ثم اختر الوجهة هنا بدون كتابة مسارات يدوياً.
+      </p>
+      <div class="studio-field">
+        <label for="linkTargetType">نوع الوجهة</label>
+        <select id="linkTargetType" class="studio-select">
+          <option value="page">صفحة داخل الموقع (أو صفحة جديدة)</option>
+          <option value="anchor">قسم داخل صفحة (Anchor)</option>
+          <option value="external">رابط خارجي (Google Form / Social Media)</option>
+        </select>
+      </div>
+      <div id="linkPageGroup" class="studio-field">
+        <label for="linkPageSelect">اختر الصفحة</label>
+        <select id="linkPageSelect" class="studio-select"></select>
+      </div>
+      <div id="linkAnchorGroup" class="studio-field" hidden>
+        <label for="linkAnchorSelect">اختر القسم</label>
+        <select id="linkAnchorSelect" class="studio-select">
+          <option value="index.html#committees">قسم اللجان (index.html#committees)</option>
+          <option value="index.html#join">قسم الانضمام (index.html#join)</option>
+          <option value="#top">أعلى الصفحة الحالية (#top)</option>
+        </select>
+      </div>
+      <div id="linkExternalGroup" class="studio-field" hidden>
+        <label for="linkExternalInput">الرابط الخارجي (https://...)</label>
+        <input id="linkExternalInput" class="studio-input" type="url" dir="ltr" placeholder="https://docs.google.com/forms/...">
+      </div>
+      <div class="studio-modal-actions">
+        <button id="cancelLinkPickerBtn" type="button" class="studio-btn">إلغاء</button>
+        <button id="applyLinkBtn" type="button" class="studio-btn studio-btn--primary">تطبيق الرابط</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. Modal: Submit Single PR -->
+  <div id="submitPrModal" class="studio-modal-backdrop" hidden>
+    <div class="studio-modal">
+      <h3>إرسال التعديلات للمراجعة (Pull Request)</h3>
+      <p style="font-size: 0.84rem; color: var(--studio-muted); margin-bottom: 12px;">
+        سيتم إنشاء فرع جديد (Branch) وطلب دمج واحد (Pull Request) يحتوي على جميع الصفحات المعدّلة والألوان والصور المرفوعة لموافقتك النهائية.
+      </p>
+      <div class="studio-field">
+        <label for="prSummaryInput">وصف مختصر للتعديلات</label>
+        <input id="prSummaryInput" class="studio-input" type="text" placeholder="مثال: تحديث صفحة قصتنا وإضافة صور الفعالية الجديدة">
+      </div>
+      <div id="prFileList" style="font-size: 0.82rem; color: var(--studio-muted); margin-bottom: 10px;"></div>
+      <div id="prError" class="studio-error" hidden></div>
+      <div id="prResult" class="studio-pr-result" hidden></div>
+      <div class="studio-modal-actions">
+        <button id="cancelPrBtn" type="button" class="studio-btn">إغلاق</button>
+        <button id="confirmPrBtn" type="button" class="studio-btn studio-btn--primary">إنشاء Pull Request</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/grapesjs@0.21.13/dist/grapes.min.js"></script>
+  <script type="module" src="studio.js"></script>
+</body>
+</html>

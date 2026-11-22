@@ -33,29 +33,41 @@ function initMobileMenu() {
 }
 
 // ===== Scroll Reveal Animations =====
-function initScrollAnimations() {
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    document.querySelectorAll('.fade-in, .fade-in-right, .fade-in-left, .stagger-children').forEach(el => {
+let scrollRevealObserver = null;
+
+function initScrollAnimations(root = document) {
+  const targets = root.querySelectorAll('.fade-in, .fade-in-right, .fade-in-left, .stagger-children');
+  if (!targets.length) return;
+
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || !('IntersectionObserver' in window)) {
+    targets.forEach(el => {
       el.classList.add('visible');
     });
     return;
   }
 
-  const observer = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      if (entry.isIntersecting) {
-        entry.target.classList.add('visible');
-      }
+  if (!scrollRevealObserver) {
+    scrollRevealObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+        }
+      });
+    }, {
+      threshold: 0.1,
+      rootMargin: '0px 0px -40px 0px'
     });
-  }, {
-    threshold: 0.1,
-    rootMargin: '0px 0px -40px 0px'
-  });
+  }
 
-  document.querySelectorAll('.fade-in, .fade-in-right, .fade-in-left, .stagger-children').forEach(el => {
-    observer.observe(el);
+  targets.forEach(el => {
+    if (!el.classList.contains('visible')) {
+      scrollRevealObserver.observe(el);
+    }
   });
 }
+
+// Expose hook so dynamically rendered CMS sections never remain stuck at opacity: 0
+window.refreshScrollAnimations = initScrollAnimations;
 
 // ===== Committees Carousel / Slider =====
 function initCommitteesSlider() {
