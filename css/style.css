@@ -38,7 +38,7 @@ body::before {
   width: 500px;
   height: 500px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(59, 130, 246, 0.12) 0%, transparent 70%);
+  background: var(--ambient-blob-top);
   pointer-events: none;
   z-index: 0;
 }
@@ -51,7 +51,7 @@ body::after {
   width: 600px;
   height: 600px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(56, 189, 248, 0.08) 0%, transparent 70%);
+  background: var(--ambient-blob-bottom);
   pointer-events: none;
   z-index: 0;
 }
@@ -369,7 +369,7 @@ section {
 .btn-cta:hover {
   transform: translateY(-3px) scale(1.02);
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.3);
-  background: #f8fafc;
+  background: var(--btn-cta-hover-bg);
 }
 
 /* ===== Hero Section ===== */
@@ -538,7 +538,7 @@ section {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #10b981;
+  background: var(--status-live);
   box-shadow: 0 0 10px #10b981;
 }
 
@@ -716,7 +716,7 @@ section {
   position: absolute;
   inset: auto 0 0 0;
   padding: 24px 20px;
-  background: linear-gradient(180deg, transparent 0%, rgba(7, 10, 19, 0.92) 100%);
+  background: var(--event-overlay-bg);
   color: #ffffff;
   display: flex;
   flex-direction: column;
@@ -725,7 +725,7 @@ section {
 }
 
 .event-card:hover .event-overlay {
-  background: linear-gradient(180deg, transparent 0%, rgba(7, 10, 19, 0.96) 100%);
+  background: var(--event-overlay-hover-bg);
 }
 
 .event-card .event-overlay h4 {
@@ -737,7 +737,7 @@ section {
 
 .event-card .event-overlay p {
   font-size: 0.88rem;
-  color: #cbd5e1;
+  color: var(--light-overlay-text);
 }
 
 /* Secondary Events Row */
@@ -972,7 +972,7 @@ section {
   width: 480px;
   height: 480px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.15) 0%, transparent 70%);
+  background: var(--cta-glow-bg);
   pointer-events: none;
 }
 
@@ -997,13 +997,13 @@ section {
 .cta-box .btn-cta {
   background: #ffffff;
   border: none;
-  color: #0369a1;
+  color: var(--btn-cta-text);
   font-weight: 800;
 }
 
 .cta-box .btn-cta:hover {
-  background: #f8fafc;
-  color: #0284c7;
+  background: var(--btn-cta-hover-bg);
+  color: var(--btn-cta-hover-text);
   transform: translateY(-3px) scale(1.03);
 }
 
@@ -1229,7 +1229,7 @@ section {
   width: 90px;
   height: 90px;
   border-radius: 50%;
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(56, 189, 248, 0.15));
+  background: var(--card-media-placeholder);
   border: 2px solid var(--border-color-light);
   display: flex;
   align-items: center;
@@ -1938,7 +1938,7 @@ picture {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(56, 189, 248, 0.15));
+  background: var(--card-media-placeholder);
   overflow: hidden;
 }
 

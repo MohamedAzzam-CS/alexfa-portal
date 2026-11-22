@@ -46,7 +46,7 @@
   width: 90px;
   height: 90px;
   border-radius: 50%;
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(56, 189, 248, 0.15));
+  background: var(--card-media-placeholder);
   border: 2px solid var(--border-color-light);
   display: flex;
   align-items: center;

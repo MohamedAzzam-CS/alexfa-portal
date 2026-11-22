@@ -184,7 +184,7 @@
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #10b981;
+  background: var(--status-live);
   box-shadow: 0 0 10px #10b981;
 }
 
@@ -362,7 +362,7 @@
   position: absolute;
   inset: auto 0 0 0;
   padding: 24px 20px;
-  background: linear-gradient(180deg, transparent 0%, rgba(7, 10, 19, 0.92) 100%);
+  background: var(--event-overlay-bg);
   color: #ffffff;
   display: flex;
   flex-direction: column;
@@ -371,7 +371,7 @@
 }
 
 .event-card:hover .event-overlay {
-  background: linear-gradient(180deg, transparent 0%, rgba(7, 10, 19, 0.96) 100%);
+  background: var(--event-overlay-hover-bg);
 }
 
 .event-card .event-overlay h4 {
@@ -383,7 +383,7 @@
 
 .event-card .event-overlay p {
   font-size: 0.88rem;
-  color: #cbd5e1;
+  color: var(--light-overlay-text);
 }
 
 /* Secondary Events Row */
@@ -618,7 +618,7 @@
   width: 480px;
   height: 480px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.15) 0%, transparent 70%);
+  background: var(--cta-glow-bg);
   pointer-events: none;
 }
 
@@ -643,13 +643,13 @@
 .cta-box .btn-cta {
   background: #ffffff;
   border: none;
-  color: #0369a1;
+  color: var(--btn-cta-text);
   font-weight: 800;
 }
 
 .cta-box .btn-cta:hover {
-  background: #f8fafc;
-  color: #0284c7;
+  background: var(--btn-cta-hover-bg);
+  color: var(--btn-cta-hover-text);
   transform: translateY(-3px) scale(1.03);
 }
 

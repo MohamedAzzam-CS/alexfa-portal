@@ -1,10 +1,9 @@
 // ============================================================================
-// Alexanders Visual Studio — GrapesJS Visual CMS Controller
-// - Protected via Cloudflare Worker session cookie (/api/cms/session|login|logout)
-// - Strips & locks outer chrome (.navbar, .footer, theme toggle, chat loader)
-// - Exports clean pages wrapped in the locked RTL Arabic HTML shell
-// - Submits all edited/new pages, css/variables.css, and uploaded assets/pc/*
-//   in a single GitHub Pull Request via POST /api/cms/submit
+// Alexanders Visual Studio — Focused 4-Capability Editor
+// 1. Inline Text Editing (double-click any text; no accidental drag-repositioning)
+// 2. Image Replacement (click/double-click any <img> -> Asset Manager + <picture> sync)
+// 3. Duplicate & Delete Any Element (minimal component toolbar only)
+// 4. Theme Colors & Gradients (live css/variables.css editor for Dark & Light themes)
 // ============================================================================
 
 const DEFAULT_WORKER_ORIGIN = "https://alexanders-ai-api.sci-mohamedelsayed32561.workers.dev";
@@ -21,12 +20,80 @@ const PAGE_EXTRA_CSS = {
   "story.html": ["css/story.css"],
 };
 
+const TEXT_TAGS = new Set([
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "p",
+  "span",
+  "a",
+  "button",
+  "li",
+  "strong",
+  "em",
+  "small",
+]);
+
+const TEXT_CLASSES = [
+  "image-label",
+  "text-bubble",
+  "leader-role",
+  "leader-name",
+  "leader-desc",
+  "stat-number",
+  "stat-label",
+  "credit",
+  "card-number",
+  "card-tag",
+  "est-badge",
+  "section-label",
+];
+
+// Curated semantic labels for solid color & gradient variables in css/variables.css
+const SOLID_COLOR_TOKENS = [
+  { token: "--bg-primary", label: "الخلفية الأساسية" },
+  { token: "--bg-secondary", label: "الخلفية الثانوية" },
+  { token: "--text-primary", label: "لون النص الرئيسي" },
+  { token: "--text-secondary", label: "لون النص الثانوي" },
+  { token: "--text-muted", label: "لون النص الخافت" },
+  { token: "--accent-blue", label: "الأزرق الأساسي" },
+  { token: "--accent-blue-light", label: "الأزرق الفاتح" },
+  { token: "--accent-cyan", label: "السماوي المميز" },
+  { token: "--accent-indigo", label: "البنفسجي المميز" },
+  { token: "--status-live", label: "لون نقطة الحالة النشطة" },
+  { token: "--btn-cta-bg", label: "خلفية زر الانضمام (CTA)" },
+  { token: "--btn-cta-text", label: "نص زر الانضمام (CTA)" },
+  { token: "--footer-bg", label: "خلفية التذييل (Footer)" },
+  { token: "--toggle-bg", label: "خلفية زر الوضع الليلي" },
+  { token: "--toggle-dot", label: "دائرة زر الوضع الليلي" },
+  { token: "--timeline-dot", label: "نقطة خط القصة (Timeline)" },
+];
+
+const GRADIENT_TOKENS = [
+  { token: "--accent-gradient", label: "التدرج الرئيسي للأزرار والعناوين" },
+  { token: "--accent-gradient-subtle", label: "تدرج الشارات الخفيف" },
+  { token: "--cta-bg", label: "تدرج صندوق الدعوة للانضمام (CTA)" },
+  { token: "--timeline-line", label: "تدرج خط القصة الزمني" },
+  { token: "--section-alt-bg", label: "تدرج خلفية الأقسام البديلة" },
+  { token: "--offer-icon-bg", label: "تدرج أيقونات الخدمات" },
+  { token: "--card-media-placeholder", label: "تدرج خلفية صور البطاقات" },
+  { token: "--event-overlay-bg", label: "تدرج تغطية صور الفعاليات" },
+  { token: "--ambient-blob-top", label: "توهج الخلفية العلوي" },
+  { token: "--ambient-blob-bottom", label: "توهج الخلفية السفلي" },
+];
+
 // State
 let editor = null;
 let currentPageFile = "index.html";
+let activeThemeScope = "dark";
 let variablesCssText = "";
 let variablesCssDirty = false;
-const pageDrafts = new Map(); // filename -> { title, extraCss, bodyHtml, scopedCss, isNew }
+let suppressDirtyTracking = false;
+
+const pageDrafts = new Map(); // filename -> { title, extraCss, bodyHtml, scopedCss, dirty }
 const uploadedAssets = new Map(); // "assets/pc/name.ext" -> { base64, dataUrl }
 
 // DOM refs
@@ -39,31 +106,19 @@ const el = {
   editorPasswordInput: document.getElementById("editorPasswordInput"),
   studioApp: document.getElementById("studioApp"),
   pageSelector: document.getElementById("pageSelector"),
-  newPageBtn: document.getElementById("newPageBtn"),
-  linkPickerBtn: document.getElementById("linkPickerBtn"),
+  deviceDesktopBtn: document.getElementById("deviceDesktopBtn"),
+  deviceMobileBtn: document.getElementById("deviceMobileBtn"),
+  undoBtn: document.getElementById("undoBtn"),
+  redoBtn: document.getElementById("redoBtn"),
   themePanelBtn: document.getElementById("themePanelBtn"),
   pendingBadge: document.getElementById("pendingBadge"),
   submitPrBtn: document.getElementById("submitPrBtn"),
   logoutBtn: document.getElementById("logoutBtn"),
   themeDrawer: document.getElementById("themeDrawer"),
   closeThemeDrawerBtn: document.getElementById("closeThemeDrawerBtn"),
-  tokenFontPrimary: document.getElementById("tokenFontPrimary"),
-  tokenFontDisplay: document.getElementById("tokenFontDisplay"),
-  newPageModal: document.getElementById("newPageModal"),
-  newPageTitle: document.getElementById("newPageTitle"),
-  newPageSlug: document.getElementById("newPageSlug"),
-  cancelNewPageBtn: document.getElementById("cancelNewPageBtn"),
-  confirmNewPageBtn: document.getElementById("confirmNewPageBtn"),
-  linkPickerModal: document.getElementById("linkPickerModal"),
-  linkTargetType: document.getElementById("linkTargetType"),
-  linkPageGroup: document.getElementById("linkPageGroup"),
-  linkPageSelect: document.getElementById("linkPageSelect"),
-  linkAnchorGroup: document.getElementById("linkAnchorGroup"),
-  linkAnchorSelect: document.getElementById("linkAnchorSelect"),
-  linkExternalGroup: document.getElementById("linkExternalGroup"),
-  linkExternalInput: document.getElementById("linkExternalInput"),
-  cancelLinkPickerBtn: document.getElementById("cancelLinkPickerBtn"),
-  applyLinkBtn: document.getElementById("applyLinkBtn"),
+  tabDarkTheme: document.getElementById("tabDarkTheme"),
+  tabLightTheme: document.getElementById("tabLightTheme"),
+  themeTokensContainer: document.getElementById("themeTokensContainer"),
   submitPrModal: document.getElementById("submitPrModal"),
   prSummaryInput: document.getElementById("prSummaryInput"),
   prFileList: document.getElementById("prFileList"),
@@ -137,6 +192,14 @@ async function handleLogout() {
 // ============================================================================
 // 2. Locked RTL HTML Shell & Chrome Stripping
 // ============================================================================
+function escapeHtml(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function buildLockedHtmlShell({ filename, title, extraCss = [], bodyHtml, scopedCss = "" }) {
   const navActive = (href) => (filename === href ? ' class="active"' : "");
   const extraCssLinks = extraCss
@@ -266,41 +329,22 @@ ${bodyHtml.trim()}
 `;
 }
 
-function escapeHtml(str) {
-  return String(str || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-/**
- * Extracts only the editable body sections from a full site HTML page,
- * stripping locked chrome (.navbar, .footer, scripts).
- */
 function stripLockedChrome(fullHtml) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(fullHtml, "text/html");
   const title = doc.querySelector("title")?.textContent?.trim() || "Alexanders";
   const scopedStyle = doc.querySelector('style[data-cms-scoped="true"]')?.textContent || "";
 
-  // Remove locked outer chrome & scripts before loading into visual canvas
   doc.body.querySelectorAll("nav.navbar, footer.footer, script, noscript").forEach((node) => node.remove());
 
-  // Make scroll-reveal elements immediately visible inside the editor canvas
   doc.body
     .querySelectorAll(".fade-in, .fade-in-left, .fade-in-right, .stagger-children")
     .forEach((node) => node.classList.add("visible"));
 
-  // Rewrite relative asset paths to ../assets/ for preview inside /admin/studio.html
-  let bodyHtml = doc.body.innerHTML.replace(/(src|srcset)="assets\//g, '$1="../assets/');
+  const bodyHtml = doc.body.innerHTML.replace(/(src|srcset)="assets\//g, '$1="../assets/');
   return { title, bodyHtml, scopedCss: scopedStyle };
 }
 
-/**
- * Normalizes exported editor HTML back to root-relative paths (assets/...)
- * and replaces any inline dataURLs with their committed assets/pc/... path.
- */
 function normalizeExportedHtml(rawHtml) {
   let html = String(rawHtml || "").replace(/(src|srcset)="\.\.\/assets\//g, '$1="assets/');
   for (const [assetPath, meta] of uploadedAssets.entries()) {
@@ -312,120 +356,76 @@ function normalizeExportedHtml(rawHtml) {
 }
 
 // ============================================================================
-// 3. GrapesJS Initialization & Design System Section Blocks
+// 3. Focused GrapesJS Setup: Inline Text, Image Swap, Duplicate & Delete Only
 // ============================================================================
-function registerDesignSystemBlocks(gjsEditor) {
-  const bm = gjsEditor.BlockManager;
+function configureComponentGuardrails(component) {
+  if (!component) return;
+  const tag = String(component.get("tagName") || "").toLowerCase();
+  const classes = component.getClasses ? component.getClasses() : [];
 
-  bm.add("alex-page-hero", {
-    label: "مقدمة صفحة (Hero)",
-    category: "أقسام ألكساندرز",
-    content: `
-      <section class="page-hero">
-        <div class="container">
-          <div class="fade-in visible">
-            <span class="section-label">قسم جديد</span>
-            <h1>عنوان <span class="highlight">مميز</span> هنا</h1>
-            <p>أضف وصفًا موجزًا للصفحة أو الفعالية الجديدة باللغة العربية.</p>
-          </div>
-        </div>
-      </section>
-    `,
+  // Lock accidental drag/drop repositioning so layout never breaks
+  component.set({
+    draggable: false,
+    droppable: false,
+    resizable: false,
+    copyable: true,
+    removable: true,
   });
 
-  bm.add("alex-timeline-item", {
-    label: "محطة قصة (Timeline)",
-    category: "أقسام ألكساندرز",
-    content: `
-      <div class="timeline-item fade-in visible">
-        <div class="timeline-dot"></div>
-        <div class="timeline-image" style="position: relative;">
-          <img src="../assets/pc/STR1-DBpUT5aE.webp" alt="محطة جديدة" loading="lazy" decoding="async">
-          <span class="image-label">عنوان المحطة</span>
-        </div>
-        <div class="timeline-text">
-          <div class="text-bubble">اكتب تفاصيل هذه المحطة المهمة في رحلة ألكساندرز هنا.</div>
-        </div>
-      </div>
-    `,
-  });
+  // Enable intuitive double-click inline editing on text elements
+  const isTextLike =
+    TEXT_TAGS.has(tag) || classes.some((cls) => TEXT_CLASSES.includes(cls));
+  if (isTextLike && tag !== "img" && tag !== "picture") {
+    component.set({ editable: true });
+  }
 
-  bm.add("alex-honor-card", {
-    label: "بطاقة مساهم (Honor)",
-    category: "أقسام ألكساندرز",
-    content: `
-      <article class="honor-card">
-        <div class="honor-photo">
-          <img src="../assets/pc/logo-DX3b3OH2.webp" alt="اسم المساهم" loading="lazy" decoding="async">
-        </div>
-        <div class="honor-body">
-          <span class="honor-title">Committee Role</span>
-          <h3 class="honor-name">الاسم الكامل</h3>
-          <p class="honor-committee">اسم اللجنة</p>
-        </div>
-      </article>
-    `,
-  });
+  // Minimal toolbar: Select Parent, Duplicate, Delete (plus Swap Image for <img>)
+  const toolbar = [
+    {
+      attributes: { class: "fa fa-arrow-up", title: "تحديد العنصر الأب (البطاقة/القسم)" },
+      command: "select-parent",
+    },
+    {
+      attributes: { class: "fa fa-clone", title: "تكرار العنصر (Duplicate)" },
+      command: "tlb-clone",
+    },
+    {
+      attributes: { class: "fa fa-trash-o", title: "حذف العنصر (Delete)" },
+      command: "tlb-delete",
+    },
+  ];
 
-  bm.add("alex-activity-card", {
-    label: "بطاقة فعالية (Activity)",
-    category: "أقسام ألكساندرز",
-    content: `
-      <div class="activity-card">
-        <div class="card-image">
-          <img src="../assets/pc/post-1-CZpH6_hv.webp" alt="فعالية ألكساندرز" loading="lazy" decoding="async">
-        </div>
-        <div class="card-body">
-          <span class="card-tag">فعالية</span>
-          <h3>عنوان الفعالية أو المبادرة</h3>
-          <p>وصف مختصر لأبرز ما حدث في هذه الفعالية وأثرها المجتمعي.</p>
-        </div>
-      </div>
-    `,
-  });
+  if (tag === "img") {
+    toolbar.unshift({
+      attributes: { class: "fa fa-picture-o", title: "تغيير الصورة (Swap Image)" },
+      command: "open-assets",
+    });
+  }
 
-  bm.add("alex-committee-card", {
-    label: "بطاقة لجنة (Committee)",
-    category: "أقسام ألكساندرز",
-    content: `
-      <div class="committee-card">
-        <div class="card-header">
-          <span class="card-number">01</span>
-          <div class="card-icon">✦</div>
-        </div>
-        <h3>اسم اللجنة</h3>
-        <p>وصف دور اللجنة ومهامها الأساسية داخل مجتمع ألكساندرز.</p>
-      </div>
-    `,
-  });
+  component.set({ toolbar });
 
-  bm.add("alex-offer-card", {
-    label: "بطاقة خدمة (Offer)",
-    category: "أقسام ألكساندرز",
-    content: `
-      <div class="offer-card">
-        <div class="offer-icon">🎓</div>
-        <h3>عنوان الخدمة أو النشاط</h3>
-        <p>شرح سريع لما نقدمه للطلاب مجاناً في هذا المسار.</p>
-      </div>
-    `,
-  });
+  // Recurse into children
+  const children = component.components ? component.components() : null;
+  if (children && children.length) {
+    children.forEach((child) => configureComponentGuardrails(child));
+  }
+}
 
-  bm.add("alex-cta-section", {
-    label: "بانر دعوة للانضمام (CTA)",
-    category: "أقسام ألكساندرز",
-    content: `
-      <section class="cta-section">
-        <div class="container">
-          <div class="cta-box fade-in visible">
-            <h2>يلا انضم لـ العيلة</h2>
-            <p>لو بتحب التطوع والفعاليات والتجارب الجامدة — مكانك هنا!</p>
-            <a href="join.html" class="btn btn-cta">انضم إلينا الآن ←</a>
-          </div>
-        </div>
-      </section>
-    `,
-  });
+/**
+ * When an <img> src changes inside a <picture>, remove any stale mobile <source>
+ * so the new image immediately displays on both desktop and mobile (the PR workflow
+ * auto-generates the fresh 480px WebP mobile variant on commit).
+ */
+function syncPictureSourceOnImageSwap(imgComponent) {
+  if (!imgComponent || String(imgComponent.get("tagName")).toLowerCase() !== "img") return;
+  const parent = imgComponent.parent();
+  if (parent && String(parent.get("tagName")).toLowerCase() === "picture") {
+    parent.components().forEach((sibling) => {
+      if (String(sibling.get("tagName")).toLowerCase() === "source") {
+        sibling.remove();
+      }
+    });
+  }
 }
 
 function initGrapesEditor() {
@@ -435,6 +435,13 @@ function initGrapesEditor() {
     width: "auto",
     storageManager: false,
     fromElement: false,
+    panels: { defaults: [] }, // Hide all heavy default panels (Blocks, Style Manager, Layers, Code)
+    deviceManager: {
+      devices: [
+        { name: "Desktop", width: "" },
+        { name: "Mobile", width: "390px", widthMedia: "480px" },
+      ],
+    },
     canvas: {
       styles: [
         "https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Poppins:wght@600;700;800;900&display=swap",
@@ -447,6 +454,8 @@ function initGrapesEditor() {
     },
     assetManager: {
       upload: false,
+      uploadText: "اسحب صورة هنا أو اضغط للرفع (سيتم حفظها في assets/pc/)",
+      addBtnText: "استخدام رابط",
       uploadFile(ev) {
         const files = ev.dataTransfer ? ev.dataTransfer.files : ev.target.files;
         if (!files || !files.length) return;
@@ -460,7 +469,18 @@ function initGrapesEditor() {
             const dataUrl = String(reader.result || "");
             const base64 = dataUrl.includes(",") ? dataUrl.split(",")[1] : dataUrl;
             uploadedAssets.set(targetPath, { base64, dataUrl });
-            editor.AssetManager.add({ src: dataUrl, name: targetPath });
+            const asset = editor.AssetManager.add({ src: dataUrl, name: targetPath });
+
+            // Immediately apply the uploaded image if an <img> is currently selected
+            const selected = editor.getSelected();
+            if (selected && String(selected.get("tagName")).toLowerCase() === "img") {
+              selected.set("src", dataUrl);
+              selected.addAttributes({ src: dataUrl });
+              syncPictureSourceOnImageSwap(selected);
+              editor.Modal.close();
+            } else if (asset) {
+              editor.AssetManager.render();
+            }
             updatePendingBadge();
           };
           reader.readAsDataURL(file);
@@ -469,23 +489,50 @@ function initGrapesEditor() {
     },
   });
 
-  // Enforce RTL & dark theme inside GrapesJS iframe document
+  // Enforce RTL & active theme inside GrapesJS iframe
   editor.on("load", () => {
     const iframeDoc = editor.Canvas.getDocument();
     if (iframeDoc?.documentElement) {
       iframeDoc.documentElement.setAttribute("lang", "ar");
       iframeDoc.documentElement.setAttribute("dir", "rtl");
-      iframeDoc.documentElement.setAttribute("data-theme", "dark");
+      iframeDoc.documentElement.setAttribute("data-theme", activeThemeScope);
     }
     applyVariablesToCanvas();
   });
 
-  // Track edits to current page automatically
+  // Apply guardrails on newly loaded or duplicated components
+  editor.on("component:add", (comp) => configureComponentGuardrails(comp));
+
+  // Clicking an <img> opens Asset Manager directly for fast 1-click image swap
+  editor.on("component:selected", (comp) => {
+    configureComponentGuardrails(comp);
+  });
+
+  editor.on("component:update:src", (comp) => {
+    syncPictureSourceOnImageSwap(comp);
+    markCurrentPageDirty();
+  });
+
+  // Open Asset Manager when clicking an image's "Swap Image" or double-clicking any <img>
+  editor.on("canvas:dblclick", (ev) => {
+    const target = ev?.target;
+    if (target && target.tagName === "IMG") {
+      const selected = editor.getSelected();
+      if (selected && String(selected.get("tagName")).toLowerCase() === "img") {
+        editor.runCommand("open-assets", {
+          target: selected,
+          types: ["image"],
+          accept: "image/*",
+        });
+      }
+    }
+  });
+
   const markCurrentPageDirty = () => {
+    if (suppressDirtyTracking) return;
     const existing = pageDrafts.get(currentPageFile) || {
       title: `Alexanders | ${currentPageFile}`,
       extraCss: PAGE_EXTRA_CSS[currentPageFile] || [],
-      isNew: false,
     };
     existing.bodyHtml = normalizeExportedHtml(editor.getHtml());
     existing.scopedCss = editor.getCss({ avoidProtected: true }) || "";
@@ -495,173 +542,83 @@ function initGrapesEditor() {
   };
 
   editor.on("component:update", markCurrentPageDirty);
-  editor.on("style:property:update", markCurrentPageDirty);
-
-  registerDesignSystemBlocks(editor);
+  editor.on("component:clone", (cloned) => {
+    configureComponentGuardrails(cloned);
+    markCurrentPageDirty();
+  });
+  editor.on("component:remove", markCurrentPageDirty);
 }
 
 // ============================================================================
-// 4. Page Loading, Custom Page Creation & Visual Link Picker
+// 4. Page Loading
 // ============================================================================
 async function loadPageIntoCanvas(filename) {
   currentPageFile = filename;
   el.pageSelector.value = filename;
-
-  if (pageDrafts.has(filename)) {
-    const draft = pageDrafts.get(filename);
-    const previewHtml = draft.bodyHtml.replace(/(src|srcset)="assets\//g, '$1="../assets/');
-    editor.setComponents(previewHtml);
-    editor.setStyle(draft.scopedCss || "");
-    applyVariablesToCanvas();
-    return;
-  }
+  suppressDirtyTracking = true;
 
   try {
-    const res = await fetch(`../${filename}`, { cache: "no-cache" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const fullHtml = await res.text();
-    const { title, bodyHtml, scopedCss } = stripLockedChrome(fullHtml);
+    if (pageDrafts.has(filename)) {
+      const draft = pageDrafts.get(filename);
+      const previewHtml = draft.bodyHtml.replace(/(src|srcset)="assets\//g, '$1="../assets/');
+      editor.setComponents(previewHtml);
+      editor.setStyle(draft.scopedCss || "");
+    } else {
+      const res = await fetch(`../${filename}`, { cache: "no-cache" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const fullHtml = await res.text();
+      const { title, bodyHtml, scopedCss } = stripLockedChrome(fullHtml);
 
-    pageDrafts.set(filename, {
-      title,
-      extraCss: PAGE_EXTRA_CSS[filename] || [],
-      bodyHtml: normalizeExportedHtml(bodyHtml),
-      scopedCss,
-      dirty: false,
-      isNew: false,
-    });
+      pageDrafts.set(filename, {
+        title,
+        extraCss: PAGE_EXTRA_CSS[filename] || [],
+        bodyHtml: normalizeExportedHtml(bodyHtml),
+        scopedCss,
+        dirty: false,
+      });
 
-    editor.setComponents(bodyHtml);
-    editor.setStyle(scopedCss);
+      editor.setComponents(bodyHtml);
+      editor.setStyle(scopedCss);
+    }
+
+    configureComponentGuardrails(editor.getWrapper());
     applyVariablesToCanvas();
   } catch (err) {
     alert(`تعذر تحميل الصفحة ${filename}: ${err.message}`);
+  } finally {
+    setTimeout(() => {
+      suppressDirtyTracking = false;
+    }, 60);
   }
-}
-
-function createCustomPage() {
-  const title = el.newPageTitle.value.trim();
-  const rawSlug = el.newPageSlug.value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-
-  if (!title || !rawSlug) {
-    alert("يرجى إدخال عنوان الصفحة واسم ملف (slug) صحيح بالإنجليزية.");
-    return;
-  }
-
-  const filename = `${rawSlug}.html`;
-  const starterBody = `
-  <section class="page-hero">
-    <div class="container">
-      <div class="fade-in visible">
-        <span class="section-label">صفحة جديدة</span>
-        <h1>${escapeHtml(title)}</h1>
-        <p>ابدأ بسحب وإفلات الأقسام من القائمة الجانبية لبناء محتوى هذه الصفحة.</p>
-      </div>
-    </div>
-  </section>`;
-
-  pageDrafts.set(filename, {
-    title: `Alexanders | ${title}`,
-    extraCss: [],
-    bodyHtml: starterBody,
-    scopedCss: "",
-    dirty: true,
-    isNew: true,
-  });
-
-  // Add to page selector if not already present
-  if (!Array.from(el.pageSelector.options).some((o) => o.value === filename)) {
-    const opt = document.createElement("option");
-    opt.value = filename;
-    opt.textContent = `${title} (${filename})`;
-    el.pageSelector.appendChild(opt);
-  }
-
-  el.newPageModal.hidden = true;
-  el.newPageTitle.value = "";
-  el.newPageSlug.value = "";
-
-  loadPageIntoCanvas(filename);
-  updatePendingBadge();
-}
-
-function openLinkPicker() {
-  const selected = editor?.getSelected();
-  if (!selected) {
-    alert("يرجى الضغط على رابط أو زر داخل الصفحة أولاً لاختيار وجهته.");
-    return;
-  }
-
-  // Populate page dropdown with all existing + newly created custom pages
-  el.linkPageSelect.innerHTML = "";
-  Array.from(el.pageSelector.options).forEach((opt) => {
-    const o = document.createElement("option");
-    o.value = opt.value;
-    o.textContent = opt.textContent;
-    el.linkPageSelect.appendChild(o);
-  });
-
-  el.linkPickerModal.hidden = false;
-}
-
-function applySelectedLink() {
-  const selected = editor?.getSelected();
-  if (!selected) return;
-
-  const mode = el.linkTargetType.value;
-  let href = "";
-  if (mode === "page") href = el.linkPageSelect.value;
-  else if (mode === "anchor") href = el.linkAnchorSelect.value;
-  else href = el.linkExternalInput.value.trim();
-
-  if (!href) {
-    alert("يرجى إدخال أو اختيار رابط صحيح.");
-    return;
-  }
-
-  // Apply href to selected element or its closest <a> ancestor
-  const targetComp =
-    selected.get("tagName") === "a" ? selected : selected.closestType?.("link") || selected;
-  targetComp.addAttributes({
-    href,
-    ...(mode === "external" ? { target: "_blank", rel: "noopener noreferrer" } : {}),
-  });
-
-  el.linkPickerModal.hidden = true;
 }
 
 // ============================================================================
-// 5. css/variables.css Theme & Typography Live Editor
+// 5. Theme Colors & Gradients Editor (css/variables.css)
 // ============================================================================
 async function loadVariablesCss() {
   try {
     const res = await fetch("../css/variables.css", { cache: "no-cache" });
     if (!res.ok) return;
     variablesCssText = await res.text();
-    syncThemeInputsFromCss(variablesCssText);
+    renderThemeTokensPanel();
   } catch {
     // ignore
   }
 }
 
-function syncThemeInputsFromCss(cssText) {
-  const rootMatch = cssText.match(/:root\s*\{([\s\S]*?)\}/);
-  const lightMatch = cssText.match(/\[data-theme="light"\]\s*\{([\s\S]*?)\}/);
-  const rootBlock = rootMatch ? rootMatch[1] : "";
-  const lightBlock = lightMatch ? lightMatch[1] : "";
+function extractCssBlock(cssText, scope) {
+  const regex =
+    scope === "light"
+      ? /\[data-theme="light"\]\s*\{([\s\S]*?)\}/
+      : /:root\s*\{([\s\S]*?)\}/;
+  const match = cssText.match(regex);
+  return match ? match[1] : "";
+}
 
-  document.querySelectorAll('input[type="color"][data-token]').forEach((input) => {
-    const scopeBlock = input.dataset.themeScope === "light" ? lightBlock : rootBlock;
-    const token = input.dataset.token;
-    const re = new RegExp(`${token}\\s*:\\s*(#[0-9a-fA-F]{6})`);
-    const m = scopeBlock.match(re);
-    if (m) input.value = m[1];
-  });
+function readTokenValue(scopeBlock, tokenName, fallback = "") {
+  const re = new RegExp(`${tokenName}\\s*:\\s*([^;]+);`);
+  const m = scopeBlock.match(re);
+  return m ? m[1].trim() : fallback;
 }
 
 function updateCssToken(scope, tokenName, value) {
@@ -685,7 +642,11 @@ function updateCssToken(scope, tokenName, value) {
 
 function applyVariablesToCanvas() {
   const iframeDoc = editor?.Canvas?.getDocument?.();
-  if (!iframeDoc || !variablesCssText) return;
+  if (!iframeDoc) return;
+  if (iframeDoc.documentElement) {
+    iframeDoc.documentElement.setAttribute("data-theme", activeThemeScope);
+  }
+  if (!variablesCssText) return;
   let styleTag = iframeDoc.getElementById("studioLiveVariables");
   if (!styleTag) {
     styleTag = iframeDoc.createElement("style");
@@ -693,6 +654,82 @@ function applyVariablesToCanvas() {
     iframeDoc.head.appendChild(styleTag);
   }
   styleTag.textContent = variablesCssText;
+}
+
+function renderThemeTokensPanel() {
+  if (!el.themeTokensContainer || !variablesCssText) return;
+  const scopeBlock = extractCssBlock(variablesCssText, activeThemeScope);
+  el.themeTokensContainer.innerHTML = "";
+
+  // 1. Solid Colors Section
+  const colorsHeader = document.createElement("div");
+  colorsHeader.className = "studio-token-group-title";
+  colorsHeader.textContent = "الألوان الأساسية (Solid Colors)";
+  el.themeTokensContainer.appendChild(colorsHeader);
+
+  SOLID_COLOR_TOKENS.forEach(({ token, label }) => {
+    const currentVal = readTokenValue(scopeBlock, token, "#38bdf8");
+    const hexMatch = currentVal.match(/^#[0-9a-fA-F]{6}$/);
+    const colorVal = hexMatch ? hexMatch[0] : "#38bdf8";
+
+    const row = document.createElement("div");
+    row.className = "studio-token-row";
+
+    const labelWrap = document.createElement("label");
+    labelWrap.textContent = label;
+    const codeEl = document.createElement("code");
+    codeEl.textContent = token;
+    labelWrap.appendChild(codeEl);
+
+    const picker = document.createElement("input");
+    picker.type = "color";
+    picker.value = colorVal;
+    picker.addEventListener("input", () => {
+      updateCssToken(activeThemeScope, token, picker.value);
+    });
+
+    row.appendChild(labelWrap);
+    row.appendChild(picker);
+    el.themeTokensContainer.appendChild(row);
+  });
+
+  // 2. Gradients Section (with live swatch preview)
+  const gradsHeader = document.createElement("div");
+  gradsHeader.className = "studio-token-group-title";
+  gradsHeader.textContent = "التدرجات اللونية (Gradients)";
+  el.themeTokensContainer.appendChild(gradsHeader);
+
+  GRADIENT_TOKENS.forEach(({ token, label }) => {
+    const currentVal = readTokenValue(scopeBlock, token, "linear-gradient(135deg, #60a5fa, #38bdf8)");
+
+    const card = document.createElement("div");
+    card.className = "studio-gradient-card";
+
+    const header = document.createElement("div");
+    header.className = "studio-gradient-header";
+    header.innerHTML = `<span>${escapeHtml(label)}</span><code style="font-size:0.7rem;color:var(--studio-muted);direction:ltr">${token}</code>`;
+
+    const swatch = document.createElement("div");
+    swatch.className = "studio-gradient-swatch";
+    swatch.style.background = currentVal;
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "studio-gradient-input";
+    input.value = currentVal;
+    input.addEventListener("input", () => {
+      const nextVal = input.value.trim();
+      swatch.style.background = nextVal;
+      if (nextVal) {
+        updateCssToken(activeThemeScope, token, nextVal);
+      }
+    });
+
+    card.appendChild(header);
+    card.appendChild(swatch);
+    card.appendChild(input);
+    el.themeTokensContainer.appendChild(card);
+  });
 }
 
 // ============================================================================
@@ -735,7 +772,7 @@ function openSubmitPrModal() {
   el.prResult.hidden = true;
 
   if (files.length === 0) {
-    el.prFileList.textContent = "لا توجد تعديلات معلقة حالياً. قم بتعديل صفحة أو لون أو رفع صورة أولاً.";
+    el.prFileList.textContent = "لا توجد تعديلات معلقة حالياً. عدّل نصًا أو صورة أو لونًا أولاً.";
     el.confirmPrBtn.disabled = true;
   } else {
     el.prFileList.innerHTML =
@@ -779,7 +816,6 @@ async function submitPullRequest() {
       throw new Error(data?.message || `HTTP ${res.status}`);
     }
 
-    // Clear dirty flags after successful PR submission
     for (const draft of pageDrafts.values()) draft.dirty = false;
     variablesCssDirty = false;
     uploadedAssets.clear();
@@ -816,44 +852,44 @@ function wireEvents() {
 
   el.pageSelector.addEventListener("change", () => loadPageIntoCanvas(el.pageSelector.value));
 
-  el.newPageBtn.addEventListener("click", () => {
-    el.newPageModal.hidden = false;
+  el.deviceDesktopBtn.addEventListener("click", () => {
+    editor?.setDevice("Desktop");
+    el.deviceDesktopBtn.classList.add("is-active");
+    el.deviceMobileBtn.classList.remove("is-active");
   });
-  el.cancelNewPageBtn.addEventListener("click", () => {
-    el.newPageModal.hidden = true;
-  });
-  el.confirmNewPageBtn.addEventListener("click", createCustomPage);
 
-  el.linkPickerBtn.addEventListener("click", openLinkPicker);
-  el.cancelLinkPickerBtn.addEventListener("click", () => {
-    el.linkPickerModal.hidden = true;
+  el.deviceMobileBtn.addEventListener("click", () => {
+    editor?.setDevice("Mobile");
+    el.deviceMobileBtn.classList.add("is-active");
+    el.deviceDesktopBtn.classList.remove("is-active");
   });
-  el.linkTargetType.addEventListener("change", () => {
-    const mode = el.linkTargetType.value;
-    el.linkPageGroup.hidden = mode !== "page";
-    el.linkAnchorGroup.hidden = mode !== "anchor";
-    el.linkExternalGroup.hidden = mode !== "external";
-  });
-  el.applyLinkBtn.addEventListener("click", applySelectedLink);
+
+  el.undoBtn.addEventListener("click", () => editor?.UndoManager?.undo());
+  el.redoBtn.addEventListener("click", () => editor?.UndoManager?.redo());
 
   el.themePanelBtn.addEventListener("click", () => {
     el.themeDrawer.hidden = !el.themeDrawer.hidden;
+    el.themePanelBtn.classList.toggle("is-active", !el.themeDrawer.hidden);
   });
   el.closeThemeDrawerBtn.addEventListener("click", () => {
     el.themeDrawer.hidden = true;
+    el.themePanelBtn.classList.remove("is-active");
   });
 
-  document.querySelectorAll('input[type="color"][data-token]').forEach((input) => {
-    input.addEventListener("input", () => {
-      updateCssToken(input.dataset.themeScope, input.dataset.token, input.value);
-    });
+  el.tabDarkTheme.addEventListener("click", () => {
+    activeThemeScope = "dark";
+    el.tabDarkTheme.classList.add("is-active");
+    el.tabLightTheme.classList.remove("is-active");
+    renderThemeTokensPanel();
+    applyVariablesToCanvas();
   });
 
-  el.tokenFontPrimary.addEventListener("change", () => {
-    updateCssToken("dark", "--font-primary", el.tokenFontPrimary.value);
-  });
-  el.tokenFontDisplay.addEventListener("change", () => {
-    updateCssToken("dark", "--font-display", el.tokenFontDisplay.value);
+  el.tabLightTheme.addEventListener("click", () => {
+    activeThemeScope = "light";
+    el.tabLightTheme.classList.add("is-active");
+    el.tabDarkTheme.classList.remove("is-active");
+    renderThemeTokensPanel();
+    applyVariablesToCanvas();
   });
 
   el.submitPrBtn.addEventListener("click", openSubmitPrModal);
