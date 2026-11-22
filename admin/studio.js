@@ -137,7 +137,6 @@ const el = {
   undoBtn: document.getElementById("undoBtn"),
   redoBtn: document.getElementById("redoBtn"),
   themePanelBtn: document.getElementById("themePanelBtn"),
-  promptAdminBtn: document.getElementById("promptAdminBtn"),
   pendingBadge: document.getElementById("pendingBadge"),
   submitPrBtn: document.getElementById("submitPrBtn"),
   logoutBtn: document.getElementById("logoutBtn"),
@@ -153,22 +152,6 @@ const el = {
   prResult: document.getElementById("prResult"),
   cancelPrBtn: document.getElementById("cancelPrBtn"),
   confirmPrBtn: document.getElementById("confirmPrBtn"),
-  // Prompt-Admin Modal refs
-  promptAdminModal: document.getElementById("promptAdminModal"),
-  closePromptModalBtn: document.getElementById("closePromptModalBtn"),
-  promptLoginView: document.getElementById("promptLoginView"),
-  promptLoginForm: document.getElementById("promptLoginForm"),
-  promptAdminPassword: document.getElementById("promptAdminPassword"),
-  promptLoginError: document.getElementById("promptLoginError"),
-  promptLoginSubmitBtn: document.getElementById("promptLoginSubmitBtn"),
-  promptEditorView: document.getElementById("promptEditorView"),
-  promptMetaInfo: document.getElementById("promptMetaInfo"),
-  promptInstructionsInput: document.getElementById("promptInstructionsInput"),
-  promptKbInput: document.getElementById("promptKbInput"),
-  promptSaveError: document.getElementById("promptSaveError"),
-  promptSaveResult: document.getElementById("promptSaveResult"),
-  promptLogoutBtn: document.getElementById("promptLogoutBtn"),
-  savePromptBtn: document.getElementById("savePromptBtn"),
 };
 
 // ============================================================================
@@ -940,143 +923,7 @@ async function submitPullRequest() {
 }
 
 // ============================================================================
-// 7. Separate Prompt-Admin Panel (Direct Backend KV Save — No PR)
-// ============================================================================
-async function openPromptAdminModal() {
-  el.promptLoginError.hidden = true;
-  el.promptSaveError.hidden = true;
-  el.promptSaveResult.hidden = true;
-  el.promptAdminModal.hidden = false;
-
-  try {
-    const res = await fetch(`${API_BASE}/api/cms/prompt/session`, {
-      method: "GET",
-      credentials: "include",
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok && data?.authenticated) {
-      await loadPromptEditorView();
-    } else {
-      el.promptLoginView.hidden = false;
-      el.promptEditorView.hidden = true;
-    }
-  } catch {
-    el.promptLoginView.hidden = false;
-    el.promptEditorView.hidden = true;
-  }
-}
-
-async function handlePromptAdminLogin(e) {
-  e.preventDefault();
-  el.promptLoginError.hidden = true;
-  el.promptLoginSubmitBtn.disabled = true;
-
-  try {
-    const res = await fetch(`${API_BASE}/api/cms/prompt/login`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        password: el.promptAdminPassword.value,
-        adminName: el.editorNameInput.value.trim() || "Prompt Admin",
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data?.authenticated) {
-      el.promptLoginError.textContent = data?.message || "كلمة مرور مدير البرومبت غير صحيحة.";
-      el.promptLoginError.hidden = false;
-      return;
-    }
-    el.promptAdminPassword.value = "";
-    await loadPromptEditorView();
-  } catch {
-    el.promptLoginError.textContent = "تعذر الاتصال بخادم Worker.";
-    el.promptLoginError.hidden = false;
-  } finally {
-    el.promptLoginSubmitBtn.disabled = false;
-  }
-}
-
-async function loadPromptEditorView() {
-  el.promptLoginView.hidden = true;
-  el.promptEditorView.hidden = false;
-  el.promptSaveError.hidden = true;
-  el.promptSaveResult.hidden = true;
-
-  try {
-    const res = await fetch(`${API_BASE}/api/cms/prompt`, {
-      method: "GET",
-      credentials: "include",
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.status === 401) {
-      el.promptLoginView.hidden = false;
-      el.promptEditorView.hidden = true;
-      return;
-    }
-    el.promptInstructionsInput.value = data.systemInstructions || "";
-    el.promptKbInput.value = data.knowledgeBase || "";
-    el.promptMetaInfo.textContent = data.updatedAt
-      ? `آخر تحديث مباشر: ${data.updatedAt} بواسطة ${data.updatedBy || "Prompt Admin"} (${data.source})`
-      : "يستخدم حالياً الإعداد الافتراضي من الخادم (default).";
-  } catch (err) {
-    el.promptSaveError.textContent = err?.message || "تعذر تحميل البرومبت الحالي.";
-    el.promptSaveError.hidden = false;
-  }
-}
-
-async function handleSavePromptLive() {
-  el.promptSaveError.hidden = true;
-  el.promptSaveResult.hidden = true;
-  el.savePromptBtn.disabled = true;
-  el.savePromptBtn.textContent = "جاري الحفظ...";
-
-  try {
-    const res = await fetch(`${API_BASE}/api/cms/prompt`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        systemInstructions: el.promptInstructionsInput.value,
-        knowledgeBase: el.promptKbInput.value,
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.status === 401) {
-      el.promptLoginView.hidden = false;
-      el.promptEditorView.hidden = true;
-      return;
-    }
-    if (!res.ok || !data?.ok) {
-      throw new Error(data?.message || `HTTP ${res.status}`);
-    }
-    el.promptMetaInfo.textContent = `آخر تحديث مباشر: ${data.updatedAt} بواسطة ${data.updatedBy} (CMS_KV)`;
-    el.promptSaveResult.textContent = "✅ تم حفظ وتفعيل البرومبت الجديد مباشرة على الخادم بدون الحاجة لـ Pull Request!";
-    el.promptSaveResult.hidden = false;
-  } catch (err) {
-    el.promptSaveError.textContent = err?.message || "فشل حفظ البرومبت.";
-    el.promptSaveError.hidden = false;
-  } finally {
-    el.savePromptBtn.disabled = false;
-    el.savePromptBtn.textContent = "💾 حفظ مباشر على الخادم (بدون PR)";
-  }
-}
-
-async function handlePromptAdminLogout() {
-  try {
-    await fetch(`${API_BASE}/api/cms/prompt/logout`, {
-      method: "POST",
-      credentials: "include",
-    });
-  } catch {
-    // ignore
-  }
-  el.promptEditorView.hidden = true;
-  el.promptLoginView.hidden = false;
-}
-
-// ============================================================================
-// 8. Bootstrap & Event Wiring
+// 7. Bootstrap & Event Wiring
 // ============================================================================
 async function enterStudio() {
   el.loginOverlay.hidden = true;
@@ -1131,15 +978,6 @@ function wireEvents() {
     el.submitPrModal.hidden = true;
   });
   el.confirmPrBtn.addEventListener("click", submitPullRequest);
-
-  // Prompt Admin events
-  el.promptAdminBtn.addEventListener("click", openPromptAdminModal);
-  el.closePromptModalBtn.addEventListener("click", () => {
-    el.promptAdminModal.hidden = true;
-  });
-  el.promptLoginForm.addEventListener("submit", handlePromptAdminLogin);
-  el.savePromptBtn.addEventListener("click", handleSavePromptLive);
-  el.promptLogoutBtn.addEventListener("click", handlePromptAdminLogout);
 }
 
 async function boot() {

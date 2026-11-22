@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Alexanders AI Prompt Admin | إدارة برومبت الذكاء الاصطناعي</title>
+  <link rel="icon" href="../favicon.webp" type="image/webp">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="studio.css">
+  <style>
+    body {
+      overflow-y: auto;
+    }
+    .prompt-page-shell {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 28px 20px 60px;
+    }
+    .prompt-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 22px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--studio-border);
+    }
+    .prompt-header h1 {
+      font-size: 1.45rem;
+      font-weight: 800;
+      color: var(--studio-accent);
+    }
+    .prompt-card {
+      background: var(--studio-surface);
+      border: 1px solid var(--studio-border);
+      border-radius: 18px;
+      padding: 24px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+    }
+    .prompt-meta {
+      font-size: 0.82rem;
+      color: var(--studio-muted);
+      margin-bottom: 16px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 1. Dedicated Prompt-Admin Login Gate (CMS_PROMPT_ADMIN_PASSWORD) -->
+  <div id="promptLoginOverlay" class="studio-login-overlay">
+    <div class="studio-login-card">
+      <span class="studio-login-badge">AI Prompt Admin Only</span>
+      <h1>إدارة برومبت الذكاء الاصطناعي</h1>
+      <p>هذه الصفحة مستقلة تماماً عن محرر الموقع وتعمل بكلمة مرور مدير البرومبت فقط. التعديلات تُفعّل مباشرة على الخادم بدون Pull Request.</p>
+      <div id="promptLoginError" class="studio-error" hidden></div>
+      <form id="promptLoginForm">
+        <div class="studio-field">
+          <label for="promptAdminName">الاسم</label>
+          <input id="promptAdminName" class="studio-input" type="text" placeholder="مثال: مدير الكيان" required>
+        </div>
+        <div class="studio-field">
+          <label for="promptAdminPassword">كلمة مرور مدير البرومبت</label>
+          <input id="promptAdminPassword" class="studio-input" type="password" placeholder="••••••••" required>
+        </div>
+        <button id="promptLoginSubmitBtn" type="submit" class="studio-btn studio-btn--primary studio-btn--full">
+          دخول إلى لوحة البرومبت
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- 2. Standalone Prompt Editor Workspace -->
+  <main id="promptApp" class="prompt-page-shell" hidden>
+    <header class="prompt-header">
+      <div>
+        <h1>🤖 لوحة التحكم في برومبت الذكاء الاصطناعي</h1>
+        <p style="font-size: 0.88rem; color: var(--studio-muted);">تحديث مباشر لقاعدة المعرفة وتعليمات المساعد الذكي على Cloudflare KV بدون Pull Request.</p>
+      </div>
+      <button id="promptLogoutBtn" type="button" class="studio-btn studio-btn--danger">تسجيل خروج</button>
+    </header>
+
+    <section class="prompt-card">
+      <div id="promptMetaInfo" class="prompt-meta"></div>
+
+      <div class="studio-field">
+        <label for="promptInstructionsInput">تعليمات النظام والضوابط (System Prompt & Guardrails)</label>
+        <textarea id="promptInstructionsInput" class="studio-textarea" rows="10" dir="auto"></textarea>
+      </div>
+
+      <div class="studio-field">
+        <label for="promptKbInput">قاعدة المعرفة (Alexanders Knowledge Base)</label>
+        <textarea id="promptKbInput" class="studio-textarea" rows="16" dir="auto"></textarea>
+      </div>
+
+      <div id="promptSaveError" class="studio-error" hidden></div>
+      <div id="promptSaveResult" class="studio-pr-result" hidden></div>
+
+      <div class="studio-modal-actions">
+        <button id="reloadPromptBtn" type="button" class="studio-btn">↻ إعادة تحميل النسخة الحالية</button>
+        <button id="savePromptBtn" type="button" class="studio-btn studio-btn--primary">💾 حفظ وتفعيل مباشر (بدون PR)</button>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="prompt.js"></script>
+</body>
+</html>
