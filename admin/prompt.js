@@ -132,7 +132,8 @@ async function handleSavePrompt() {
     }
 
     el.metaInfo.textContent = `آخر تحديث مباشر: ${data.updatedAt} بواسطة ${data.updatedBy} (CMS_KV)`;
-    el.saveResult.textContent = "✅ تم حفظ وتفعيل البرومبت الجديد مباشرة على الخادم بدون Pull Request!";
+    el.saveResult.textContent =
+      "✅ تم حفظ وتفعيل البرومبت الجديد مباشرة على الخادم (بدون PR)، وجاري تحديث إجابات الـ 21 سؤال شائع تلقائياً بالذكاء الاصطناعي!";
     el.saveResult.hidden = false;
   } catch (err) {
     el.saveError.textContent = err?.message || "فشل حفظ البرومبت.";

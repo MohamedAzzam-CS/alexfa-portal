@@ -118,12 +118,7 @@
       const raw = localStorage.getItem(FAQ_CACHE_STORAGE_KEY);
       if (!raw) return null;
       const parsed = JSON.parse(raw);
-      if (
-        parsed &&
-        parsed.version === FAQ_CATALOG_VERSION &&
-        Array.isArray(parsed.faqs) &&
-        parsed.faqs.length === 21
-      ) {
+      if (parsed && Array.isArray(parsed.faqs) && parsed.faqs.length === 21) {
         return parsed.faqs;
       }
     } catch {
@@ -148,13 +143,8 @@
   }
 
   async function syncFaqsFromWorker() {
-    const cached = loadCachedFaqs();
-    if (cached && cached.every((item) => item.answer)) {
-      faqCatalog = cached;
-      renderFaqChips();
-      return;
-    }
-
+    // Always fetch GET /api/faqs in the background so newly AI-regenerated FAQ versions
+    // automatically replace stale localStorage answers.
     try {
       const res = await fetch(FAQS_ENDPOINT, {
         method: "GET",
@@ -168,7 +158,7 @@
         renderFaqChips();
       }
     } catch {
-      // Fallback to DEFAULT_FAQ_ITEMS on network error
+      // Fallback to cached or DEFAULT_FAQ_ITEMS on network error
     }
   }
 
