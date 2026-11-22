@@ -25,6 +25,8 @@
   const GUEST_LIMIT = 5;
   const MAX_HISTORY_MESSAGES = 12; // Keep last 6 conversation turns
   const SESSION_STORAGE_KEY = "alex_chat_session_id";
+  const GUEST_TOKEN_STORAGE_KEY = "alex_chat_guest_token";
+  const PUTER_TOKEN_STORAGE_KEY = "alex_chat_puter_token";
   const FAQ_CACHE_STORAGE_KEY = "alex_chat_faqs_cache_v1";
   const FAQ_CATALOG_VERSION = "2026-v1";
 
@@ -113,6 +115,48 @@
     }
   }
 
+  function getGuestToken() {
+    try {
+      return sessionStorage.getItem(GUEST_TOKEN_STORAGE_KEY) || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function persistGuestToken(token) {
+    if (!token || typeof token !== "string") return;
+    try {
+      sessionStorage.setItem(GUEST_TOKEN_STORAGE_KEY, token);
+    } catch {
+      // Ignore storage errors in private browsing
+    }
+  }
+
+  function getCachedPuterToken() {
+    try {
+      return sessionStorage.getItem(PUTER_TOKEN_STORAGE_KEY) || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function persistPuterToken(token) {
+    if (!token || typeof token !== "string") return;
+    try {
+      sessionStorage.setItem(PUTER_TOKEN_STORAGE_KEY, token);
+    } catch {
+      // Ignore storage errors
+    }
+  }
+
+  function clearCachedPuterToken() {
+    try {
+      sessionStorage.removeItem(PUTER_TOKEN_STORAGE_KEY);
+    } catch {
+      // Ignore storage errors
+    }
+  }
+
   function loadCachedFaqs() {
     try {
       const raw = localStorage.getItem(FAQ_CACHE_STORAGE_KEY);
@@ -168,43 +212,55 @@
 
   function isUserSignedIn() {
     try {
-      return Boolean(
+      if (
         isPuterAvailable() &&
-          typeof window.puter.auth.isSignedIn === "function" &&
-          window.puter.auth.isSignedIn()
-      );
+        typeof window.puter.auth.isSignedIn === "function" &&
+        window.puter.auth.isSignedIn()
+      ) {
+        return true;
+      }
     } catch {
-      return false;
+      // Ignore SDK errors on iOS ITP
     }
+    return Boolean(getCachedPuterToken());
   }
 
   /**
-   * Retrieves the active Puter auth token from Puter.js SDK or storage.
+   * Retrieves the active Puter auth token from Puter.js SDK or iOS-safe sessionStorage fallback.
    */
   async function getPuterAuthToken() {
-    if (!isUserSignedIn()) return null;
-
     try {
-      if (typeof window.puter.auth.getAuthToken === "function") {
+      if (isPuterAvailable() && typeof window.puter.auth.getAuthToken === "function") {
         const token = await window.puter.auth.getAuthToken();
-        if (token && typeof token === "string") return token;
+        if (token && typeof token === "string") {
+          persistPuterToken(token);
+          return token;
+        }
       }
     } catch {
-      // Fallback to direct properties
+      // Fallback to direct properties / sessionStorage
     }
 
     if (typeof window.puter?.authToken === "string" && window.puter.authToken) {
+      persistPuterToken(window.puter.authToken);
       return window.puter.authToken;
     }
     if (typeof window.puter?.auth?.token === "string" && window.puter.auth.token) {
+      persistPuterToken(window.puter.auth.token);
       return window.puter.auth.token;
     }
+
+    const cached = getCachedPuterToken();
+    if (cached) return cached;
 
     try {
       const storedToken =
         localStorage.getItem("puter.auth.token") ||
         localStorage.getItem("auth_token");
-      if (storedToken) return storedToken;
+      if (storedToken) {
+        persistPuterToken(storedToken);
+        return storedToken;
+      }
     } catch {
       // Ignore storage access errors
     }
@@ -265,6 +321,7 @@
       if (res.ok) {
         const data = await res.json();
         if (data?.sessionId) persistSessionId(data.sessionId);
+        if (data?.user?.userId) currentUserProfile = data.user;
       }
     } catch (err) {
       console.warn("[Alexanders Chat] Session link warning:", err?.message || err);
@@ -296,9 +353,13 @@
   async function syncQuotaFromWorker() {
     try {
       const token = await getPuterAuthToken();
+      const guestToken = getGuestToken();
       const headers = {};
       if (token) {
         headers.Authorization = `Bearer ${token}`;
+      }
+      if (guestToken) {
+        headers["X-Guest-Session"] = guestToken;
       }
       const url = `${QUOTA_ENDPOINT}?sessionId=${encodeURIComponent(sessionId)}`;
       const res = await fetch(url, {
@@ -310,6 +371,12 @@
       const data = await res.json();
       if (data?.sessionId) {
         persistSessionId(data.sessionId);
+      }
+      if (data?.isAuthenticated && data?.user?.userId) {
+        currentUserProfile = data.user;
+      } else if (token && data?.isAuthenticated === false) {
+        clearCachedPuterToken();
+        currentUserProfile = null;
       }
       if (data?.guestQuota) {
         guestQuota = {
@@ -407,14 +474,23 @@
     }
 
     Promise.resolve(signInPromise)
-      .then(async () => {
+      .then(async (signInResult) => {
         if (dom.signInBtn) dom.signInBtn.disabled = false;
-        const token = await getPuterAuthToken();
-        if (!isUserSignedIn() || !token) {
+        const directToken =
+          (typeof signInResult?.token === "string" && signInResult.token) ||
+          (typeof signInResult?.auth_token === "string" && signInResult.auth_token) ||
+          (typeof signInResult?.authToken === "string" && signInResult.authToken) ||
+          null;
+        if (directToken) {
+          persistPuterToken(directToken);
+        }
+        const token = directToken || (await getPuterAuthToken());
+        if (!token) {
           refreshAuthUI();
           showAuthPrompt("لم يكتمل تسجيل الدخول. اضغط على الزر للمحاولة مرة أخرى.");
           return;
         }
+        persistPuterToken(token);
 
         hideAuthPrompt();
         await linkSessionWithWorker();
@@ -750,6 +826,10 @@
       if (puterToken) {
         headers.Authorization = `Bearer ${puterToken}`;
       }
+      const guestToken = getGuestToken();
+      if (guestToken) {
+        headers["X-Guest-Session"] = guestToken;
+      }
 
       // Send ONLY { faqId, sessionId } — never free-text { message }
       const response = await fetch(CHAT_ENDPOINT, {
@@ -841,6 +921,10 @@
       if (puterToken) {
         headers.Authorization = `Bearer ${puterToken}`;
       }
+      const guestToken = getGuestToken();
+      if (guestToken) {
+        headers["X-Guest-Session"] = guestToken;
+      }
 
       // Strictly send { message, history, sessionId } (never faqId) for typed input
       const payload = {
@@ -862,6 +946,9 @@
       if (data?.sessionId) {
         persistSessionId(data.sessionId);
       }
+      if (data?.guestToken) {
+        persistGuestToken(data.guestToken);
+      }
       if (data?.guestQuota) {
         guestQuota = {
           count: Number(data.guestQuota.count ?? guestQuota.count),
@@ -879,6 +966,10 @@
         (response.status === 403 || response.status === 401) &&
         data?.error === "AUTH_REQUIRED"
       ) {
+        if (response.status === 401) {
+          clearCachedPuterToken();
+          currentUserProfile = null;
+        }
         pendingMessage = userText;
         assistantNode?.msgEl.remove();
         await refreshAuthUI();
