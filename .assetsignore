@@ -1,7 +1,0 @@
-.git
-.gitignore
-.wrangler
-.assetsignore
-worker
-wrangler.toml
-alexanders_knowledge_base.txt

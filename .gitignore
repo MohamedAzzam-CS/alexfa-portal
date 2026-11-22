@@ -2,3 +2,8 @@
 node_modules/
 .DS_Store
 Thumbs.db
+worker/
+wrangler.toml
+.assetsignore
+download-chat-logs.ps1
+visitor-chats-*
