@@ -1,9 +1,7 @@
 // ===== Theme System =====
 (function () {
-  const saved = localStorage.getItem('alexanders-theme');
-  if (saved) {
-    document.documentElement.setAttribute('data-theme', saved);
-  }
+  const saved = localStorage.getItem('alexanders-theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', saved);
 })();
 
 function toggleTheme() {
@@ -12,6 +10,7 @@ function toggleTheme() {
   document.documentElement.setAttribute('data-theme', next);
   localStorage.setItem('alexanders-theme', next);
 }
+window.toggleTheme = toggleTheme;
 
 // ===== Mobile Navigation =====
 function initMobileMenu() {

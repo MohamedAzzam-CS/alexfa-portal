@@ -56,9 +56,11 @@
 
         <button id="deviceDesktopBtn" type="button" class="studio-btn is-active" title="معاينة الكمبيوتر">🖥️ كمبيوتر</button>
         <button id="deviceMobileBtn" type="button" class="studio-btn" title="معاينة الموبايل">📱 موبايل</button>
+        <button id="canvasThemeToggleBtn" type="button" class="studio-btn" title="تبديل الوضع الليلي / النهاري">🌙 الوضع الليلي</button>
         <button id="undoBtn" type="button" class="studio-btn" title="تراجع">↩️ تراجع</button>
         <button id="redoBtn" type="button" class="studio-btn" title="إعادة">↪️ إعادة</button>
         <button id="themePanelBtn" type="button" class="studio-btn">🎨 الألوان والتدرجات</button>
+        <button id="promptAdminBtn" type="button" class="studio-btn">🤖 برومبت AI</button>
       </div>
 
       <div class="studio-topbar-group">
@@ -110,6 +112,52 @@
       <div class="studio-modal-actions">
         <button id="cancelPrBtn" type="button" class="studio-btn">إغلاق</button>
         <button id="confirmPrBtn" type="button" class="studio-btn studio-btn--primary">إنشاء Pull Request</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Modal: Separate Prompt-Admin Panel (Direct Backend KV Save — No PR) -->
+  <div id="promptAdminModal" class="studio-modal-backdrop" hidden>
+    <div class="studio-modal studio-modal--wide">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <h3 style="margin:0;">🤖 إدارة برومبت الذكاء الاصطناعي (حفظ مباشر بدون PR)</h3>
+        <button id="closePromptModalBtn" type="button" class="studio-btn">✕</button>
+      </div>
+
+      <!-- Prompt Admin Separate Login -->
+      <div id="promptLoginView">
+        <p style="font-size: 0.85rem; color: var(--studio-muted); margin-bottom: 14px;">
+          هذا القسم مخصص لمدير البرومبت فقط وله كلمة مرور مستقلة (<code>CMS_PROMPT_ADMIN_PASSWORD</code>). التعديلات تُحفظ مباشرة في الخادم بدون إنشاء Pull Request.
+        </p>
+        <div id="promptLoginError" class="studio-error" hidden></div>
+        <form id="promptLoginForm">
+          <div class="studio-field">
+            <label for="promptAdminPassword">كلمة مرور مدير البرومبت</label>
+            <input id="promptAdminPassword" class="studio-input" type="password" placeholder="••••••••" required>
+          </div>
+          <button id="promptLoginSubmitBtn" type="submit" class="studio-btn studio-btn--primary studio-btn--full">
+            فتح لوحة البرومبت
+          </button>
+        </form>
+      </div>
+
+      <!-- Prompt Admin Editor View -->
+      <div id="promptEditorView" hidden>
+        <div id="promptMetaInfo" style="font-size:0.78rem;color:var(--studio-muted);margin-bottom:10px;"></div>
+        <div class="studio-field">
+          <label for="promptInstructionsInput">تعليمات النظام (System Prompt & Guardrails)</label>
+          <textarea id="promptInstructionsInput" class="studio-textarea" rows="7" dir="auto"></textarea>
+        </div>
+        <div class="studio-field">
+          <label for="promptKbInput">قاعدة المعرفة (Knowledge Base)</label>
+          <textarea id="promptKbInput" class="studio-textarea" rows="10" dir="auto"></textarea>
+        </div>
+        <div id="promptSaveError" class="studio-error" hidden></div>
+        <div id="promptSaveResult" class="studio-pr-result" hidden></div>
+        <div class="studio-modal-actions">
+          <button id="promptLogoutBtn" type="button" class="studio-btn studio-btn--danger">تسجيل خروج مدير البرومبت</button>
+          <button id="savePromptBtn" type="button" class="studio-btn studio-btn--primary">💾 حفظ مباشر على الخادم (بدون PR)</button>
+        </div>
       </div>
     </div>
   </div>

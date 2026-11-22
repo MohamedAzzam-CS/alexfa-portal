@@ -1,9 +1,6 @@
 // ============================================================================
-// Alexanders Visual Studio — Focused 4-Capability Editor
-// 1. Inline Text Editing (double-click any text; no accidental drag-repositioning)
-// 2. Image Replacement (click/double-click any <img> -> Asset Manager + <picture> sync)
-// 3. Duplicate & Delete Any Element (minimal component toolbar only)
-// 4. Theme Colors & Gradients (live css/variables.css editor for Dark & Light themes)
+// Alexanders Visual Studio — Focused 4-Capability Editor + Site-Wide Chrome Sync
+// + Dedicated Prompt-Admin Direct Save (No PR)
 // ============================================================================
 
 const DEFAULT_WORKER_ORIGIN = "https://alexanders-ai-api.sci-mohamedelsayed32561.workers.dev";
@@ -13,6 +10,18 @@ const API_BASE =
     : typeof window !== "undefined" && window.location.hostname.endsWith(".workers.dev")
       ? ""
       : DEFAULT_WORKER_ORIGIN;
+
+const SITE_PAGES = [
+  "index.html",
+  "about.html",
+  "story.html",
+  "honor.html",
+  "committees.html",
+  "gallery.html",
+  "join.html",
+  "privacy.html",
+  "terms.html",
+];
 
 const PAGE_EXTRA_CSS = {
   "index.html": ["css/home.css"],
@@ -52,7 +61,18 @@ const TEXT_CLASSES = [
   "section-label",
 ];
 
-// Curated semantic labels for solid color & gradient variables in css/variables.css
+// Decorative / absolutely positioned elements that must NOT be duplicated in place (prevents overlap)
+const NON_DUPLICABLE_CLASSES = [
+  "timeline-dot",
+  "image-label",
+  "event-overlay",
+  "hero-founder-badge",
+  "navbar",
+  "footer",
+  "theme-toggle",
+  "hamburger",
+];
+
 const SOLID_COLOR_TOKENS = [
   { token: "--bg-primary", label: "الخلفية الأساسية" },
   { token: "--bg-secondary", label: "الخلفية الثانوية" },
@@ -93,6 +113,11 @@ let variablesCssText = "";
 let variablesCssDirty = false;
 let suppressDirtyTracking = false;
 
+// Shared Navbar / Footer sync state (propagated across all site pages when edited)
+let sharedNavbarHtml = null;
+let sharedFooterHtml = null;
+let sharedChromeDirty = false;
+
 const pageDrafts = new Map(); // filename -> { title, extraCss, bodyHtml, scopedCss, dirty }
 const uploadedAssets = new Map(); // "assets/pc/name.ext" -> { base64, dataUrl }
 
@@ -108,9 +133,11 @@ const el = {
   pageSelector: document.getElementById("pageSelector"),
   deviceDesktopBtn: document.getElementById("deviceDesktopBtn"),
   deviceMobileBtn: document.getElementById("deviceMobileBtn"),
+  canvasThemeToggleBtn: document.getElementById("canvasThemeToggleBtn"),
   undoBtn: document.getElementById("undoBtn"),
   redoBtn: document.getElementById("redoBtn"),
   themePanelBtn: document.getElementById("themePanelBtn"),
+  promptAdminBtn: document.getElementById("promptAdminBtn"),
   pendingBadge: document.getElementById("pendingBadge"),
   submitPrBtn: document.getElementById("submitPrBtn"),
   logoutBtn: document.getElementById("logoutBtn"),
@@ -126,10 +153,26 @@ const el = {
   prResult: document.getElementById("prResult"),
   cancelPrBtn: document.getElementById("cancelPrBtn"),
   confirmPrBtn: document.getElementById("confirmPrBtn"),
+  // Prompt-Admin Modal refs
+  promptAdminModal: document.getElementById("promptAdminModal"),
+  closePromptModalBtn: document.getElementById("closePromptModalBtn"),
+  promptLoginView: document.getElementById("promptLoginView"),
+  promptLoginForm: document.getElementById("promptLoginForm"),
+  promptAdminPassword: document.getElementById("promptAdminPassword"),
+  promptLoginError: document.getElementById("promptLoginError"),
+  promptLoginSubmitBtn: document.getElementById("promptLoginSubmitBtn"),
+  promptEditorView: document.getElementById("promptEditorView"),
+  promptMetaInfo: document.getElementById("promptMetaInfo"),
+  promptInstructionsInput: document.getElementById("promptInstructionsInput"),
+  promptKbInput: document.getElementById("promptKbInput"),
+  promptSaveError: document.getElementById("promptSaveError"),
+  promptSaveResult: document.getElementById("promptSaveResult"),
+  promptLogoutBtn: document.getElementById("promptLogoutBtn"),
+  savePromptBtn: document.getElementById("savePromptBtn"),
 };
 
 // ============================================================================
-// 1. Worker Authentication Gate
+// 1. Editor Worker Authentication Gate
 // ============================================================================
 async function checkSession() {
   try {
@@ -190,7 +233,7 @@ async function handleLogout() {
 }
 
 // ============================================================================
-// 2. Locked RTL HTML Shell & Chrome Stripping
+// 2. Editable Navbar & Footer + Site-Wide Propagation Helpers
 // ============================================================================
 function escapeHtml(str) {
   return String(str || "")
@@ -200,14 +243,16 @@ function escapeHtml(str) {
     .replace(/"/g, "&quot;");
 }
 
-function buildLockedHtmlShell({ filename, title, extraCss = [], bodyHtml, scopedCss = "" }) {
-  const navActive = (href) => (filename === href ? ' class="active"' : "");
+function buildHtmlDocument({ filename, title, extraCss = [], bodyHtml, scopedCss = "" }) {
   const extraCssLinks = extraCss
     .map((href) => `  <link rel="stylesheet" href="${href}">`)
     .join("\n");
   const scopedStyleBlock = scopedCss.trim()
     ? `\n  <style data-cms-scoped="true">\n${scopedCss.trim()}\n  </style>`
     : "";
+
+  // Ensure each page's active navbar link matches its own filename
+  const syncedBody = applySharedChromeToBody(bodyHtml, filename);
 
   return `<!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="dark">
@@ -224,77 +269,7 @@ function buildLockedHtmlShell({ filename, title, extraCss = [], bodyHtml, scoped
 </head>
 <body>
 
-  <!-- Locked Navbar -->
-  <nav class="navbar">
-    <div class="container">
-      <a href="index.html" class="navbar-logo">
-        <picture>
-          <source media="(max-width: 768px)" srcset="assets/mobile/logo-DX3b3OH2.webp">
-          <img src="assets/pc/logo-DX3b3OH2.webp" alt="Alexanders Logo" width="1080" height="1080">
-        </picture>
-      </a>
-      <div class="navbar-links">
-        <a href="index.html"${navActive("index.html")}>الرئيسية</a>
-        <a href="about.html"${navActive("about.html")}>من نحن</a>
-        <a href="story.html"${navActive("story.html")}>قصتنا</a>
-        <a href="honor.html"${navActive("honor.html")}>المساهمون</a>
-        <a href="gallery.html"${navActive("gallery.html")}>المعرض</a>
-      </div>
-      <div class="navbar-actions">
-        <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
-          <div class="toggle-track">
-            <div class="toggle-dot">
-              <span class="icon-moon">🌙</span>
-              <span class="icon-sun">☀️</span>
-            </div>
-          </div>
-        </button>
-        <button class="hamburger" aria-label="Menu">
-          <span></span>
-          <span></span>
-          <span></span>
-        </button>
-      </div>
-    </div>
-  </nav>
-
-${bodyHtml.trim()}
-
-  <!-- Locked Footer -->
-  <footer class="footer">
-    <div class="container">
-      <div class="footer-brand">
-        <div class="brand-header">
-          <picture>
-            <source media="(max-width: 768px)" srcset="assets/mobile/logo-DX3b3OH2.webp">
-            <img src="assets/pc/logo-DX3b3OH2.webp" alt="Alexanders" loading="lazy" decoding="async" width="1080" height="1080">
-          </picture>
-          <span>ALEXANDERS</span>
-        </div>
-        <p>مجتمع ثقفى يجمع بين روح الفن الكلاسيكي والإبداع التكنولوجي. نُلهم، نُعلّم، ونبني الجيل القادم من المبدعين.</p>
-        <div class="footer-socials">
-          <a href="https://www.youtube.com/@alexandersgroup" aria-label="YouTube">▶</a>
-          <a href="https://www.linkedin.com/company/alexanders-group/posts/" aria-label="LinkedIn">in</a>
-          <a href="https://www.facebook.com/profile.php?id=61573564592001" aria-label="Facebook">f</a>
-          <a href="https://www.tiktok.com/@alexanders.groupp" aria-label="TikTok">♪</a>
-        </div>
-      </div>
-      <div class="footer-links-group">
-        <h4>روابط</h4>
-        <a href="about.html">من نحن</a>
-        <a href="story.html">قصة اليكساندرز</a>
-        <a href="honor.html">المساهمون في الموقع</a>
-        <a href="gallery.html">المعرض</a>
-        <a href="index.html#committees">اللجان</a>
-        <a href="join.html">انضم إلينا</a>
-      </div>
-    </div>
-    <div class="container">
-      <div class="footer-bottom">
-        <span class="copyright">© All Rights Reserved by Alexanders 2026</span>
-      </div>
-    </div>
-  </footer>
+${syncedBody.trim()}
 
   <script src="js/main.js"></script>
   <script>
@@ -329,14 +304,17 @@ ${bodyHtml.trim()}
 `;
 }
 
-function stripLockedChrome(fullHtml) {
+/**
+ * Extracts the editable body (INCLUDING <nav class="navbar"> and <footer class="footer">)
+ * while stripping only <script> and <noscript> tags.
+ */
+function extractEditableBody(fullHtml) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(fullHtml, "text/html");
   const title = doc.querySelector("title")?.textContent?.trim() || "Alexanders";
   const scopedStyle = doc.querySelector('style[data-cms-scoped="true"]')?.textContent || "";
 
-  doc.body.querySelectorAll("nav.navbar, footer.footer, script, noscript").forEach((node) => node.remove());
-
+  doc.body.querySelectorAll("script, noscript").forEach((node) => node.remove());
   doc.body
     .querySelectorAll(".fade-in, .fade-in-left, .fade-in-right, .stagger-children")
     .forEach((node) => node.classList.add("visible"));
@@ -355,43 +333,98 @@ function normalizeExportedHtml(rawHtml) {
   return html;
 }
 
+/**
+ * Captures updated .navbar / .footer markup from the current page body
+ * so edits propagate site-wide to all HTML pages on submit.
+ */
+function captureSharedChromeFromBody(normalizedBodyHtml) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(`<body>${normalizedBodyHtml}</body>`, "text/html");
+  const nav = doc.body.querySelector("nav.navbar");
+  const footer = doc.body.querySelector("footer.footer");
+
+  if (nav) {
+    nav.querySelectorAll("a.active").forEach((a) => a.classList.remove("active"));
+    const nextNav = nav.outerHTML;
+    if (sharedNavbarHtml && sharedNavbarHtml !== nextNav) {
+      sharedChromeDirty = true;
+    }
+    sharedNavbarHtml = nextNav;
+  }
+
+  if (footer) {
+    const nextFooter = footer.outerHTML;
+    if (sharedFooterHtml && sharedFooterHtml !== nextFooter) {
+      sharedChromeDirty = true;
+    }
+    sharedFooterHtml = nextFooter;
+  }
+}
+
+/**
+ * Replaces .navbar and .footer inside any page's bodyHtml with the latest
+ * shared navbar/footer while setting class="active" on the link matching filename.
+ */
+function applySharedChromeToBody(bodyHtml, filename) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(`<body>${bodyHtml}</body>`, "text/html");
+
+  if (sharedNavbarHtml) {
+    const existingNav = doc.body.querySelector("nav.navbar");
+    const navDoc = parser.parseFromString(`<body>${sharedNavbarHtml}</body>`, "text/html");
+    const newNav = navDoc.body.querySelector("nav.navbar");
+    if (newNav) {
+      newNav.querySelectorAll(".navbar-links a").forEach((a) => {
+        a.classList.toggle("active", a.getAttribute("href") === filename);
+      });
+      if (existingNav) existingNav.replaceWith(newNav);
+      else doc.body.prepend(newNav);
+    }
+  }
+
+  if (sharedFooterHtml) {
+    const existingFooter = doc.body.querySelector("footer.footer");
+    const footerDoc = parser.parseFromString(`<body>${sharedFooterHtml}</body>`, "text/html");
+    const newFooter = footerDoc.body.querySelector("footer.footer");
+    if (newFooter) {
+      if (existingFooter) existingFooter.replaceWith(newFooter);
+      else doc.body.append(newFooter);
+    }
+  }
+
+  return doc.body.innerHTML;
+}
+
 // ============================================================================
-// 3. Focused GrapesJS Setup: Inline Text, Image Swap, Duplicate & Delete Only
+// 3. Focused GrapesJS Setup: Inline Text, Image Swap, Safe Duplicate & Delete
 // ============================================================================
 function configureComponentGuardrails(component) {
   if (!component) return;
   const tag = String(component.get("tagName") || "").toLowerCase();
   const classes = component.getClasses ? component.getClasses() : [];
+  const isProtectedRegion =
+    tag === "nav" ||
+    tag === "footer" ||
+    classes.some((cls) => NON_DUPLICABLE_CLASSES.includes(cls));
 
-  // Lock accidental drag/drop repositioning so layout never breaks
   component.set({
     draggable: false,
     droppable: false,
     resizable: false,
-    copyable: true,
-    removable: true,
+    copyable: !isProtectedRegion,
+    removable: !isProtectedRegion,
   });
 
-  // Enable intuitive double-click inline editing on text elements
   const isTextLike =
     TEXT_TAGS.has(tag) || classes.some((cls) => TEXT_CLASSES.includes(cls));
-  if (isTextLike && tag !== "img" && tag !== "picture") {
+  if (isTextLike && tag !== "img" && tag !== "picture" && tag !== "button") {
     component.set({ editable: true });
   }
 
-  // Minimal toolbar: Select Parent, Duplicate, Delete (plus Swap Image for <img>)
   const toolbar = [
     {
       attributes: { class: "fa fa-arrow-up", title: "تحديد العنصر الأب (البطاقة/القسم)" },
       command: "select-parent",
-    },
-    {
-      attributes: { class: "fa fa-clone", title: "تكرار العنصر (Duplicate)" },
-      command: "tlb-clone",
-    },
-    {
-      attributes: { class: "fa fa-trash-o", title: "حذف العنصر (Delete)" },
-      command: "tlb-delete",
     },
   ];
 
@@ -402,20 +435,27 @@ function configureComponentGuardrails(component) {
     });
   }
 
+  if (!isProtectedRegion) {
+    toolbar.push(
+      {
+        attributes: { class: "fa fa-clone", title: "تكرار العنصر (Duplicate)" },
+        command: "tlb-clone",
+      },
+      {
+        attributes: { class: "fa fa-trash-o", title: "حذف العنصر (Delete)" },
+        command: "tlb-delete",
+      }
+    );
+  }
+
   component.set({ toolbar });
 
-  // Recurse into children
   const children = component.components ? component.components() : null;
   if (children && children.length) {
     children.forEach((child) => configureComponentGuardrails(child));
   }
 }
 
-/**
- * When an <img> src changes inside a <picture>, remove any stale mobile <source>
- * so the new image immediately displays on both desktop and mobile (the PR workflow
- * auto-generates the fresh 480px WebP mobile variant on commit).
- */
 function syncPictureSourceOnImageSwap(imgComponent) {
   if (!imgComponent || String(imgComponent.get("tagName")).toLowerCase() !== "img") return;
   const parent = imgComponent.parent();
@@ -435,7 +475,7 @@ function initGrapesEditor() {
     width: "auto",
     storageManager: false,
     fromElement: false,
-    panels: { defaults: [] }, // Hide all heavy default panels (Blocks, Style Manager, Layers, Code)
+    panels: { defaults: [] },
     deviceManager: {
       devices: [
         { name: "Desktop", width: "" },
@@ -471,7 +511,6 @@ function initGrapesEditor() {
             uploadedAssets.set(targetPath, { base64, dataUrl });
             const asset = editor.AssetManager.add({ src: dataUrl, name: targetPath });
 
-            // Immediately apply the uploaded image if an <img> is currently selected
             const selected = editor.getSelected();
             if (selected && String(selected.get("tagName")).toLowerCase() === "img") {
               selected.set("src", dataUrl);
@@ -489,31 +528,18 @@ function initGrapesEditor() {
     },
   });
 
-  // Enforce RTL & active theme inside GrapesJS iframe
   editor.on("load", () => {
-    const iframeDoc = editor.Canvas.getDocument();
-    if (iframeDoc?.documentElement) {
-      iframeDoc.documentElement.setAttribute("lang", "ar");
-      iframeDoc.documentElement.setAttribute("dir", "rtl");
-      iframeDoc.documentElement.setAttribute("data-theme", activeThemeScope);
-    }
     applyVariablesToCanvas();
   });
 
-  // Apply guardrails on newly loaded or duplicated components
   editor.on("component:add", (comp) => configureComponentGuardrails(comp));
-
-  // Clicking an <img> opens Asset Manager directly for fast 1-click image swap
-  editor.on("component:selected", (comp) => {
-    configureComponentGuardrails(comp);
-  });
+  editor.on("component:selected", (comp) => configureComponentGuardrails(comp));
 
   editor.on("component:update:src", (comp) => {
     syncPictureSourceOnImageSwap(comp);
     markCurrentPageDirty();
   });
 
-  // Open Asset Manager when clicking an image's "Swap Image" or double-clicking any <img>
   editor.on("canvas:dblclick", (ev) => {
     const target = ev?.target;
     if (target && target.tagName === "IMG") {
@@ -534,7 +560,10 @@ function initGrapesEditor() {
       title: `Alexanders | ${currentPageFile}`,
       extraCss: PAGE_EXTRA_CSS[currentPageFile] || [],
     };
-    existing.bodyHtml = normalizeExportedHtml(editor.getHtml());
+    const normalized = normalizeExportedHtml(editor.getHtml());
+    captureSharedChromeFromBody(normalized);
+
+    existing.bodyHtml = normalized;
     existing.scopedCss = editor.getCss({ avoidProtected: true }) || "";
     existing.dirty = true;
     pageDrafts.set(currentPageFile, existing);
@@ -550,7 +579,7 @@ function initGrapesEditor() {
 }
 
 // ============================================================================
-// 4. Page Loading
+// 4. Page Loading (With Shared Navbar/Footer Sync)
 // ============================================================================
 async function loadPageIntoCanvas(filename) {
   currentPageFile = filename;
@@ -558,29 +587,37 @@ async function loadPageIntoCanvas(filename) {
   suppressDirtyTracking = true;
 
   try {
-    if (pageDrafts.has(filename)) {
-      const draft = pageDrafts.get(filename);
-      const previewHtml = draft.bodyHtml.replace(/(src|srcset)="assets\//g, '$1="../assets/');
-      editor.setComponents(previewHtml);
-      editor.setStyle(draft.scopedCss || "");
-    } else {
+    let draft = pageDrafts.get(filename);
+    if (!draft) {
       const res = await fetch(`../${filename}`, { cache: "no-cache" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const fullHtml = await res.text();
-      const { title, bodyHtml, scopedCss } = stripLockedChrome(fullHtml);
+      const { title, bodyHtml, scopedCss } = extractEditableBody(fullHtml);
+      const normalized = normalizeExportedHtml(bodyHtml);
 
-      pageDrafts.set(filename, {
+      // Seed shared navbar/footer from the first loaded page
+      if (!sharedNavbarHtml || !sharedFooterHtml) {
+        captureSharedChromeFromBody(normalized);
+      }
+
+      draft = {
         title,
         extraCss: PAGE_EXTRA_CSS[filename] || [],
-        bodyHtml: normalizeExportedHtml(bodyHtml),
+        bodyHtml: normalized,
         scopedCss,
         dirty: false,
-      });
-
-      editor.setComponents(bodyHtml);
-      editor.setStyle(scopedCss);
+      };
+      pageDrafts.set(filename, draft);
     }
 
+    // Apply any site-wide navbar/footer edits made on other pages
+    const syncedBody = sharedChromeDirty
+      ? applySharedChromeToBody(draft.bodyHtml, filename)
+      : draft.bodyHtml;
+    const previewHtml = syncedBody.replace(/(src|srcset)="assets\//g, '$1="../assets/');
+
+    editor.setComponents(previewHtml);
+    editor.setStyle(draft.scopedCss || "");
     configureComponentGuardrails(editor.getWrapper());
     applyVariablesToCanvas();
   } catch (err) {
@@ -593,8 +630,19 @@ async function loadPageIntoCanvas(filename) {
 }
 
 // ============================================================================
-// 5. Theme Colors & Gradients Editor (css/variables.css)
+// 5. Night/Dark & Light Theme Preview + css/variables.css Editor
 // ============================================================================
+function setCanvasTheme(theme) {
+  activeThemeScope = theme === "light" ? "light" : "dark";
+  el.tabDarkTheme.classList.toggle("is-active", activeThemeScope === "dark");
+  el.tabLightTheme.classList.toggle("is-active", activeThemeScope === "light");
+  el.canvasThemeToggleBtn.textContent =
+    activeThemeScope === "dark" ? "🌙 الوضع الليلي" : "☀️ الوضع النهاري";
+
+  renderThemeTokensPanel();
+  applyVariablesToCanvas();
+}
+
 async function loadVariablesCss() {
   try {
     const res = await fetch("../css/variables.css", { cache: "no-cache" });
@@ -610,7 +658,7 @@ function extractCssBlock(cssText, scope) {
   const regex =
     scope === "light"
       ? /\[data-theme="light"\]\s*\{([\s\S]*?)\}/
-      : /:root\s*\{([\s\S]*?)\}/;
+      : /:root(?:,\s*\[data-theme="dark"\])?\s*\{([\s\S]*?)\}/;
   const match = cssText.match(regex);
   return match ? match[1] : "";
 }
@@ -625,7 +673,7 @@ function updateCssToken(scope, tokenName, value) {
   const blockRegex =
     scope === "light"
       ? /(\[data-theme="light"\]\s*\{)([\s\S]*?)(\})/
-      : /(:root\s*\{)([\s\S]*?)(\})/;
+      : /(:root(?:,\s*\[data-theme="dark"\])?\s*\{)([\s\S]*?)(\})/;
 
   variablesCssText = variablesCssText.replace(blockRegex, (_, open, body, close) => {
     const tokenRe = new RegExp(`(${tokenName}\\s*:\\s*)([^;]+)(;)`);
@@ -643,17 +691,36 @@ function updateCssToken(scope, tokenName, value) {
 function applyVariablesToCanvas() {
   const iframeDoc = editor?.Canvas?.getDocument?.();
   if (!iframeDoc) return;
+
   if (iframeDoc.documentElement) {
+    iframeDoc.documentElement.setAttribute("lang", "ar");
+    iframeDoc.documentElement.setAttribute("dir", "rtl");
     iframeDoc.documentElement.setAttribute("data-theme", activeThemeScope);
   }
-  if (!variablesCssText) return;
+  if (iframeDoc.body) {
+    iframeDoc.body.setAttribute("data-theme", activeThemeScope);
+  }
+
   let styleTag = iframeDoc.getElementById("studioLiveVariables");
   if (!styleTag) {
     styleTag = iframeDoc.createElement("style");
     styleTag.id = "studioLiveVariables";
     iframeDoc.head.appendChild(styleTag);
   }
-  styleTag.textContent = variablesCssText;
+
+  // Ensure GrapesJS iframe body accurately reflects Dark/Light theme and keeps sticky navbar non-overlapping
+  const studioPreviewOverrides = `
+    html, body {
+      background-color: var(--bg-primary) !important;
+      color: var(--text-primary) !important;
+      direction: rtl !important;
+    }
+    nav.navbar {
+      position: sticky !important;
+      top: 0 !important;
+    }
+  `;
+  styleTag.textContent = `${variablesCssText || ""}\n${studioPreviewOverrides}`;
 }
 
 function renderThemeTokensPanel() {
@@ -661,7 +728,6 @@ function renderThemeTokensPanel() {
   const scopeBlock = extractCssBlock(variablesCssText, activeThemeScope);
   el.themeTokensContainer.innerHTML = "";
 
-  // 1. Solid Colors Section
   const colorsHeader = document.createElement("div");
   colorsHeader.className = "studio-token-group-title";
   colorsHeader.textContent = "الألوان الأساسية (Solid Colors)";
@@ -693,7 +759,6 @@ function renderThemeTokensPanel() {
     el.themeTokensContainer.appendChild(row);
   });
 
-  // 2. Gradients Section (with live swatch preview)
   const gradsHeader = document.createElement("div");
   gradsHeader.className = "studio-token-group-title";
   gradsHeader.textContent = "التدرجات اللونية (Gradients)";
@@ -733,14 +798,38 @@ function renderThemeTokensPanel() {
 }
 
 // ============================================================================
-// 6. Single Pull Request Submission (POST /api/cms/submit)
+// 6. Single Pull Request Submission (With Site-Wide Navbar/Footer Propagation)
 // ============================================================================
-function collectPendingFiles() {
-  const files = [];
+async function prepareFilesForPr() {
+  // If .navbar or .footer was edited, fetch all remaining site pages so they receive the update too
+  if (sharedChromeDirty) {
+    for (const filename of SITE_PAGES) {
+      if (!pageDrafts.has(filename)) {
+        try {
+          const res = await fetch(`../${filename}`, { cache: "no-cache" });
+          if (!res.ok) continue;
+          const fullHtml = await res.text();
+          const { title, bodyHtml, scopedCss } = extractEditableBody(fullHtml);
+          pageDrafts.set(filename, {
+            title,
+            extraCss: PAGE_EXTRA_CSS[filename] || [],
+            bodyHtml: normalizeExportedHtml(bodyHtml),
+            scopedCss,
+            dirty: true,
+          });
+        } catch {
+          // ignore unreachable page
+        }
+      } else {
+        pageDrafts.get(filename).dirty = true;
+      }
+    }
+  }
 
+  const files = [];
   for (const [filename, draft] of pageDrafts.entries()) {
     if (!draft.dirty) continue;
-    const fullHtml = buildLockedHtmlShell({
+    const fullHtml = buildHtmlDocument({
       filename,
       title: draft.title,
       extraCss: draft.extraCss,
@@ -761,16 +850,35 @@ function collectPendingFiles() {
   return files;
 }
 
-function updatePendingBadge() {
-  const count = collectPendingFiles().length;
-  el.pendingBadge.textContent = `${count} تعديلات معلقة`;
+function getPendingCountSync() {
+  let count = 0;
+  if (sharedChromeDirty) {
+    count += SITE_PAGES.length;
+  } else {
+    for (const draft of pageDrafts.values()) {
+      if (draft.dirty) count++;
+    }
+  }
+  if (variablesCssDirty) count++;
+  count += uploadedAssets.size;
+  return count;
 }
 
-function openSubmitPrModal() {
-  const files = collectPendingFiles();
+function updatePendingBadge() {
+  const count = getPendingCountSync();
+  el.pendingBadge.textContent = sharedChromeDirty
+    ? `${count} ملفات (مزامنة شاملة للـ Navbar/Footer)`
+    : `${count} تعديلات معلقة`;
+}
+
+async function openSubmitPrModal() {
   el.prError.hidden = true;
   el.prResult.hidden = true;
+  el.prFileList.textContent = "جاري تجهيز قائمة الملفات...";
+  el.confirmPrBtn.disabled = true;
+  el.submitPrModal.hidden = false;
 
+  const files = await prepareFilesForPr();
   if (files.length === 0) {
     el.prFileList.textContent = "لا توجد تعديلات معلقة حالياً. عدّل نصًا أو صورة أو لونًا أولاً.";
     el.confirmPrBtn.disabled = true;
@@ -780,12 +888,10 @@ function openSubmitPrModal() {
       files.map((f) => `• <code>${escapeHtml(f.path)}</code>`).join("<br>");
     el.confirmPrBtn.disabled = false;
   }
-
-  el.submitPrModal.hidden = false;
 }
 
 async function submitPullRequest() {
-  const files = collectPendingFiles();
+  const files = await prepareFilesForPr();
   if (files.length === 0) return;
 
   el.prError.hidden = true;
@@ -817,6 +923,7 @@ async function submitPullRequest() {
     }
 
     for (const draft of pageDrafts.values()) draft.dirty = false;
+    sharedChromeDirty = false;
     variablesCssDirty = false;
     uploadedAssets.clear();
     updatePendingBadge();
@@ -833,7 +940,143 @@ async function submitPullRequest() {
 }
 
 // ============================================================================
-// 7. Bootstrap & Event Wiring
+// 7. Separate Prompt-Admin Panel (Direct Backend KV Save — No PR)
+// ============================================================================
+async function openPromptAdminModal() {
+  el.promptLoginError.hidden = true;
+  el.promptSaveError.hidden = true;
+  el.promptSaveResult.hidden = true;
+  el.promptAdminModal.hidden = false;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/cms/prompt/session`, {
+      method: "GET",
+      credentials: "include",
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data?.authenticated) {
+      await loadPromptEditorView();
+    } else {
+      el.promptLoginView.hidden = false;
+      el.promptEditorView.hidden = true;
+    }
+  } catch {
+    el.promptLoginView.hidden = false;
+    el.promptEditorView.hidden = true;
+  }
+}
+
+async function handlePromptAdminLogin(e) {
+  e.preventDefault();
+  el.promptLoginError.hidden = true;
+  el.promptLoginSubmitBtn.disabled = true;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/cms/prompt/login`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        password: el.promptAdminPassword.value,
+        adminName: el.editorNameInput.value.trim() || "Prompt Admin",
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.authenticated) {
+      el.promptLoginError.textContent = data?.message || "كلمة مرور مدير البرومبت غير صحيحة.";
+      el.promptLoginError.hidden = false;
+      return;
+    }
+    el.promptAdminPassword.value = "";
+    await loadPromptEditorView();
+  } catch {
+    el.promptLoginError.textContent = "تعذر الاتصال بخادم Worker.";
+    el.promptLoginError.hidden = false;
+  } finally {
+    el.promptLoginSubmitBtn.disabled = false;
+  }
+}
+
+async function loadPromptEditorView() {
+  el.promptLoginView.hidden = true;
+  el.promptEditorView.hidden = false;
+  el.promptSaveError.hidden = true;
+  el.promptSaveResult.hidden = true;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/cms/prompt`, {
+      method: "GET",
+      credentials: "include",
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) {
+      el.promptLoginView.hidden = false;
+      el.promptEditorView.hidden = true;
+      return;
+    }
+    el.promptInstructionsInput.value = data.systemInstructions || "";
+    el.promptKbInput.value = data.knowledgeBase || "";
+    el.promptMetaInfo.textContent = data.updatedAt
+      ? `آخر تحديث مباشر: ${data.updatedAt} بواسطة ${data.updatedBy || "Prompt Admin"} (${data.source})`
+      : "يستخدم حالياً الإعداد الافتراضي من الخادم (default).";
+  } catch (err) {
+    el.promptSaveError.textContent = err?.message || "تعذر تحميل البرومبت الحالي.";
+    el.promptSaveError.hidden = false;
+  }
+}
+
+async function handleSavePromptLive() {
+  el.promptSaveError.hidden = true;
+  el.promptSaveResult.hidden = true;
+  el.savePromptBtn.disabled = true;
+  el.savePromptBtn.textContent = "جاري الحفظ...";
+
+  try {
+    const res = await fetch(`${API_BASE}/api/cms/prompt`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        systemInstructions: el.promptInstructionsInput.value,
+        knowledgeBase: el.promptKbInput.value,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) {
+      el.promptLoginView.hidden = false;
+      el.promptEditorView.hidden = true;
+      return;
+    }
+    if (!res.ok || !data?.ok) {
+      throw new Error(data?.message || `HTTP ${res.status}`);
+    }
+    el.promptMetaInfo.textContent = `آخر تحديث مباشر: ${data.updatedAt} بواسطة ${data.updatedBy} (CMS_KV)`;
+    el.promptSaveResult.textContent = "✅ تم حفظ وتفعيل البرومبت الجديد مباشرة على الخادم بدون الحاجة لـ Pull Request!";
+    el.promptSaveResult.hidden = false;
+  } catch (err) {
+    el.promptSaveError.textContent = err?.message || "فشل حفظ البرومبت.";
+    el.promptSaveError.hidden = false;
+  } finally {
+    el.savePromptBtn.disabled = false;
+    el.savePromptBtn.textContent = "💾 حفظ مباشر على الخادم (بدون PR)";
+  }
+}
+
+async function handlePromptAdminLogout() {
+  try {
+    await fetch(`${API_BASE}/api/cms/prompt/logout`, {
+      method: "POST",
+      credentials: "include",
+    });
+  } catch {
+    // ignore
+  }
+  el.promptEditorView.hidden = true;
+  el.promptLoginView.hidden = false;
+}
+
+// ============================================================================
+// 8. Bootstrap & Event Wiring
 // ============================================================================
 async function enterStudio() {
   el.loginOverlay.hidden = true;
@@ -864,6 +1107,10 @@ function wireEvents() {
     el.deviceDesktopBtn.classList.remove("is-active");
   });
 
+  el.canvasThemeToggleBtn.addEventListener("click", () => {
+    setCanvasTheme(activeThemeScope === "dark" ? "light" : "dark");
+  });
+
   el.undoBtn.addEventListener("click", () => editor?.UndoManager?.undo());
   el.redoBtn.addEventListener("click", () => editor?.UndoManager?.redo());
 
@@ -876,27 +1123,23 @@ function wireEvents() {
     el.themePanelBtn.classList.remove("is-active");
   });
 
-  el.tabDarkTheme.addEventListener("click", () => {
-    activeThemeScope = "dark";
-    el.tabDarkTheme.classList.add("is-active");
-    el.tabLightTheme.classList.remove("is-active");
-    renderThemeTokensPanel();
-    applyVariablesToCanvas();
-  });
-
-  el.tabLightTheme.addEventListener("click", () => {
-    activeThemeScope = "light";
-    el.tabLightTheme.classList.add("is-active");
-    el.tabDarkTheme.classList.remove("is-active");
-    renderThemeTokensPanel();
-    applyVariablesToCanvas();
-  });
+  el.tabDarkTheme.addEventListener("click", () => setCanvasTheme("dark"));
+  el.tabLightTheme.addEventListener("click", () => setCanvasTheme("light"));
 
   el.submitPrBtn.addEventListener("click", openSubmitPrModal);
   el.cancelPrBtn.addEventListener("click", () => {
     el.submitPrModal.hidden = true;
   });
   el.confirmPrBtn.addEventListener("click", submitPullRequest);
+
+  // Prompt Admin events
+  el.promptAdminBtn.addEventListener("click", openPromptAdminModal);
+  el.closePromptModalBtn.addEventListener("click", () => {
+    el.promptAdminModal.hidden = true;
+  });
+  el.promptLoginForm.addEventListener("submit", handlePromptAdminLogin);
+  el.savePromptBtn.addEventListener("click", handleSavePromptLive);
+  el.promptLogoutBtn.addEventListener("click", handlePromptAdminLogout);
 }
 
 async function boot() {
