@@ -34,8 +34,12 @@ const el = {
   idInput: document.getElementById("eventIdInput"),
   titleInput: document.getElementById("eventTitleInput"),
   categoryInput: document.getElementById("eventCategoryInput"),
-  dateInput: document.getElementById("eventDateInput"),
-  timeInput: document.getElementById("eventTimeInput"),
+  dayInput: document.getElementById("eventDayInput"),
+  monthInput: document.getElementById("eventMonthInput"),
+  yearInput: document.getElementById("eventYearInput"),
+  hourInput: document.getElementById("eventHourInput"),
+  minuteInput: document.getElementById("eventMinuteInput"),
+  periodInput: document.getElementById("eventPeriodInput"),
   locationInput: document.getElementById("eventLocationInput"),
   regUrlInput: document.getElementById("eventRegUrlInput"),
   descInput: document.getElementById("eventDescInput"),
@@ -128,13 +132,125 @@ function compressImageFileToDataUrl(file) {
   });
 }
 
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+function formatDateDmy(isoYmd) {
+  if (!isoYmd || !/^\d{4}-\d{2}-\d{2}$/.test(isoYmd)) return isoYmd || "";
+  const [y, m, d] = isoYmd.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+function formatTime12h(hhmm) {
+  if (!hhmm || !hhmm.includes(":")) return hhmm || "";
+  const [hStr, mStr] = hhmm.split(":");
+  const h = Number(hStr);
+  const period = h >= 12 ? "م" : "ص";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${mStr} ${period}`;
+}
+
+function initDateTimePickers() {
+  // Day 01..31
+  el.dayInput.innerHTML = "";
+  for (let d = 1; d <= 31; d++) {
+    const opt = document.createElement("option");
+    opt.value = pad2(d);
+    opt.textContent = pad2(d);
+    el.dayInput.appendChild(opt);
+  }
+  // Month 01..12
+  el.monthInput.innerHTML = "";
+  for (let m = 1; m <= 12; m++) {
+    const opt = document.createElement("option");
+    opt.value = pad2(m);
+    opt.textContent = pad2(m);
+    el.monthInput.appendChild(opt);
+  }
+  // Year current-1 .. current+5
+  el.yearInput.innerHTML = "";
+  const baseYear = new Date().getFullYear();
+  for (let y = baseYear - 1; y <= baseYear + 5; y++) {
+    const opt = document.createElement("option");
+    opt.value = String(y);
+    opt.textContent = String(y);
+    el.yearInput.appendChild(opt);
+  }
+  // Hour 01..12
+  el.hourInput.innerHTML = "";
+  for (let h = 1; h <= 12; h++) {
+    const opt = document.createElement("option");
+    opt.value = pad2(h);
+    opt.textContent = pad2(h);
+    el.hourInput.appendChild(opt);
+  }
+  // Minute 00..55 (5-minute steps)
+  el.minuteInput.innerHTML = "";
+  for (let min = 0; min < 60; min += 5) {
+    const opt = document.createElement("option");
+    opt.value = pad2(min);
+    opt.textContent = pad2(min);
+    el.minuteInput.appendChild(opt);
+  }
+}
+
+function setDatePickerFromIso(isoYmd) {
+  if (!isoYmd || !/^\d{4}-\d{2}-\d{2}$/.test(isoYmd)) return;
+  const [y, m, d] = isoYmd.split("-");
+  if (!Array.from(el.yearInput.options).some((o) => o.value === y)) {
+    const opt = document.createElement("option");
+    opt.value = y;
+    opt.textContent = y;
+    el.yearInput.appendChild(opt);
+  }
+  el.yearInput.value = y;
+  el.monthInput.value = m;
+  el.dayInput.value = d;
+}
+
+function getIsoDateFromPicker() {
+  const y = Number(el.yearInput.value);
+  const m = Number(el.monthInput.value);
+  const d = Number(el.dayInput.value);
+  const check = new Date(Date.UTC(y, m - 1, d));
+  if (
+    check.getUTCFullYear() !== y ||
+    check.getUTCMonth() + 1 !== m ||
+    check.getUTCDate() !== d
+  ) {
+    return null;
+  }
+  return `${y}-${pad2(m)}-${pad2(d)}`;
+}
+
+function setTimePickerFrom24h(hhmm) {
+  const [hRaw, mRaw] = String(hhmm || "17:00").split(":");
+  const h24 = Number(hRaw);
+  const min = Number(mRaw || 0);
+  const period = h24 >= 12 ? "PM" : "AM";
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  const snappedMin = pad2(Math.floor(min / 5) * 5);
+  el.hourInput.value = pad2(h12);
+  el.minuteInput.value = snappedMin;
+  el.periodInput.value = period;
+}
+
+function get24hTimeFromPicker() {
+  let h = Number(el.hourInput.value) % 12;
+  if (el.periodInput.value === "PM") h += 12;
+  return `${pad2(h)}:${el.minuteInput.value}`;
+}
+
 function resetForm() {
   el.formTitle.textContent = "➕ إضافة فعالية جديدة";
   el.idInput.value = "";
   el.titleInput.value = "";
   el.categoryInput.value = "فعالية";
-  el.dateInput.value = eventsState.egyptNow?.egyptDate || "";
-  el.timeInput.value = "17:00";
+  if (eventsState.egyptNow?.egyptDate) {
+    setDatePickerFromIso(eventsState.egyptNow.egyptDate);
+  }
+  setTimePickerFrom24h("17:00");
   el.locationInput.value = "";
   el.regUrlInput.value = "";
   el.descInput.value = "";
@@ -148,8 +264,8 @@ function populateFormForEdit(evt) {
   el.idInput.value = evt.id || "";
   el.titleInput.value = evt.title || "";
   el.categoryInput.value = evt.category || "فعالية";
-  el.dateInput.value = evt.egyptDate || "";
-  el.timeInput.value = evt.egyptTime || "17:00";
+  setDatePickerFromIso(evt.egyptDate || eventsState.egyptNow?.egyptDate || "");
+  setTimePickerFrom24h(evt.egyptTime || "17:00");
   el.locationInput.value = evt.location || "";
   el.regUrlInput.value = evt.registrationUrl || "";
   el.descInput.value = evt.description || "";
@@ -206,7 +322,9 @@ function renderEventsList() {
 
     const meta = document.createElement("div");
     meta.className = "admin-event-meta";
-    meta.textContent = `📅 ${evt.egyptDate} • ⏰ ${evt.egyptTime} بتوقيت مصر` + (evt.location ? ` • 📍 ${evt.location}` : "");
+    meta.textContent =
+      `📅 ${formatDateDmy(evt.egyptDate)} • ⏰ ${formatTime12h(evt.egyptTime)} بتوقيت مصر` +
+      (evt.location ? ` • 📍 ${evt.location}` : "");
     body.appendChild(meta);
 
     if (evt.description) {
@@ -262,8 +380,8 @@ async function loadEvents() {
       passed: Array.isArray(data.passed) ? data.passed : [],
       egyptNow: data.egyptNow || null,
     };
-    if (!el.dateInput.value && eventsState.egyptNow?.egyptDate) {
-      el.dateInput.value = eventsState.egyptNow.egyptDate;
+    if (!el.idInput.value && eventsState.egyptNow?.egyptDate) {
+      setDatePickerFromIso(eventsState.egyptNow.egyptDate);
     }
     renderEventsList();
   } catch (err) {
@@ -276,6 +394,14 @@ async function handleSaveEvent(e) {
   e.preventDefault();
   el.formError.hidden = true;
   el.formSuccess.hidden = true;
+  const egyptDateIso = getIsoDateFromPicker();
+  if (!egyptDateIso) {
+    el.formError.textContent = "التاريخ المختار غير صحيح (تأكد من اليوم والشهر).";
+    el.formError.hidden = false;
+    return;
+  }
+  const egyptTime24 = get24hTimeFromPicker();
+
   el.saveEventBtn.disabled = true;
   el.saveEventBtn.textContent = "جاري الحفظ...";
 
@@ -291,8 +417,8 @@ async function handleSaveEvent(e) {
         id: el.idInput.value.trim() || undefined,
         title: el.titleInput.value.trim(),
         category: el.categoryInput.value,
-        egyptDate: el.dateInput.value,
-        egyptTime: el.timeInput.value || "17:00",
+        egyptDate: egyptDateIso,
+        egyptTime: egyptTime24,
         location: el.locationInput.value.trim(),
         registrationUrl: el.regUrlInput.value.trim(),
         description: el.descInput.value.trim(),
@@ -434,6 +560,9 @@ function setFilter(f) {
 }
 
 async function boot() {
+  initDateTimePickers();
+  setTimePickerFrom24h("17:00");
+
   el.loginForm.addEventListener("submit", handleLogin);
   el.logoutBtn.addEventListener("click", handleLogout);
   el.form.addEventListener("submit", handleSaveEvent);

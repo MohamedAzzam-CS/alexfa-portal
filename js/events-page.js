@@ -26,6 +26,12 @@ const egyptClockBadge = document.getElementById("egyptClockBadge");
 let activeFilter = "upcoming";
 let eventsState = { upcoming: [], passed: [], egyptNow: null };
 
+function formatEgyptDateDmy(isoYmd) {
+  if (!isoYmd || !/^\d{4}-\d{2}-\d{2}$/.test(isoYmd)) return isoYmd || "";
+  const [y, m, d] = isoYmd.split("-");
+  return `${d}/${m}/${y}`;
+}
+
 function formatEgyptTime12h(hhmm) {
   if (!hhmm || !hhmm.includes(":")) return hhmm || "";
   const [hStr, mStr] = hhmm.split(":");
@@ -117,7 +123,7 @@ function renderEvents() {
     meta.className = "event-meta-list";
 
     const dateLine = document.createElement("div");
-    dateLine.textContent = `📅 ${evt.egyptDate} • ⏰ ${formatEgyptTime12h(evt.egyptTime)} (بتوقيت مصر)`;
+    dateLine.textContent = `📅 ${formatEgyptDateDmy(evt.egyptDate)} • ⏰ ${formatEgyptTime12h(evt.egyptTime)} (بتوقيت مصر)`;
     meta.appendChild(dateLine);
 
     if (evt.location) {
