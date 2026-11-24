@@ -382,13 +382,6 @@
     <section class="prompt-card">
       <div id="chatMessages" class="chat-messages" aria-live="polite"></div>
 
-      <div class="chat-chips" id="chatQuickChips">
-        <button type="button" class="chat-chip" data-prompt="راجع البرومبت الحالي واحذف أي معلومات مكررة وحسّن ترتيبه بدون حذف أي معلومة مهمة">✨ تحسين وحذف التكرار</button>
-        <button type="button" class="chat-chip" data-prompt="عايز أضيف إيفنت أو ورشة جديدة بتاريخ مصر">➕ إضافة فعالية جديدة</button>
-        <button type="button" class="chat-chip" data-prompt="عايز أعدّل لينك أو ميعاد تقديم">📅 تعديل ميعاد أو لينك</button>
-        <button type="button" class="chat-chip" data-prompt="لخّص لي أهم المعلومات الموجودة في البرومبت حالياً">🔍 ملخص البرومبت الحالي</button>
-      </div>
-
       <form id="chatForm" class="chat-composer">
         <textarea
           id="chatInput"
@@ -425,6 +418,27 @@
         <div class="studio-modal-actions">
           <button id="reloadPromptBtn" type="button" class="studio-btn">↻ إعادة تحميل</button>
           <button id="savePromptBtn" type="button" class="studio-btn studio-btn--primary">💾 حفظ مباشر</button>
+        </div>
+      </div>
+    </details>
+
+    <!-- Optional: FAQ Editor -->
+    <details class="prompt-card secondary-details">
+      <summary class="secondary-summary">
+        <span>💬 إدارة الأسئلة الشائعة (FAQ)</span>
+        <span style="font-size: 0.78rem; color: var(--studio-muted);">تتحدث تلقائياً بعد تعديل البرومبت</span>
+      </summary>
+      <div class="secondary-body">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+          <div id="faqMetaInfo" class="prompt-meta" style="margin:0;"></div>
+          <button id="addFaqBtn" type="button" class="studio-btn">+ إضافة سؤال</button>
+        </div>
+        <div id="faqItemsList" style="display:flex;flex-direction:column;gap:12px;margin-bottom:14px;"></div>
+        <div id="faqSaveError" class="studio-error" hidden></div>
+        <div id="faqSaveResult" class="studio-pr-result" hidden></div>
+        <div class="studio-modal-actions">
+          <button id="reloadFaqsBtn" type="button" class="studio-btn">↻ إعادة تحميل</button>
+          <button id="saveFaqsBtn" type="button" class="studio-btn studio-btn--primary">✨ مراجعة بالـ AI وحفظ</button>
         </div>
       </div>
     </details>
