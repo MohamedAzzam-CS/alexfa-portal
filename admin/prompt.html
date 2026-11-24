@@ -192,6 +192,85 @@
       color: #86efac;
     }
 
+    /* Interactive AI Resolution & Missing-Details Form inside chat */
+    .agent-inline-form {
+      margin-top: 12px;
+      padding: 14px;
+      border-radius: 12px;
+      background: rgba(0, 0, 0, 0.32);
+      border: 1px solid rgba(255, 209, 102, 0.32);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .agent-inline-form.is-submitted {
+      opacity: 0.65;
+      pointer-events: none;
+    }
+    .agent-form-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .agent-form-label {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: #fef3c7;
+    }
+    .agent-form-helper {
+      font-size: 0.78rem;
+      color: var(--studio-muted);
+    }
+    .agent-radio-group {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+    .agent-radio-option {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 44px;
+      padding: 9px 12px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--studio-border);
+      cursor: pointer;
+      font-size: 0.88rem;
+      color: var(--studio-text);
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .agent-radio-option:hover,
+    .agent-radio-option:has(input:checked) {
+      background: rgba(255, 209, 102, 0.14);
+      border-color: rgba(255, 209, 102, 0.6);
+    }
+    .agent-radio-option input[type="radio"] {
+      accent-color: var(--studio-accent);
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+    }
+    .agent-field-control {
+      width: 100%;
+      min-height: 44px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--studio-border);
+      background: rgba(0, 0, 0, 0.35);
+      color: var(--studio-text);
+      font-family: inherit;
+      font-size: 16px; /* Prevents iOS Safari auto-zoom */
+    }
+    .agent-field-control:focus {
+      outline: none;
+      border-color: var(--studio-accent);
+    }
+    .agent-form-submit {
+      min-height: 44px;
+      width: 100%;
+    }
+
     .agent-quick-chips {
       display: flex;
       gap: 8px;

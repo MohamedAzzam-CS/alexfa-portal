@@ -251,6 +251,115 @@ function appendAgentMessage(role, text, options = {}) {
     bubble.appendChild(list);
   }
 
+  if (options.form && Array.isArray(options.form.fields) && options.form.fields.length > 0) {
+    const formEl = document.createElement("form");
+    formEl.className = "agent-inline-form";
+    const formUid = `af_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+    options.form.fields.forEach((field, fIdx) => {
+      const wrap = document.createElement("div");
+      wrap.className = "agent-form-field";
+
+      const labelEl = document.createElement("label");
+      labelEl.className = "agent-form-label";
+      labelEl.textContent = field.label || `حقل ${fIdx + 1}`;
+      wrap.appendChild(labelEl);
+
+      if (field.helper) {
+        const helperEl = document.createElement("div");
+        helperEl.className = "agent-form-helper";
+        helperEl.textContent = field.helper;
+        wrap.appendChild(helperEl);
+      }
+
+      const fieldName = `${formUid}_${field.id || fIdx}`;
+
+      if (field.type === "radio" && Array.isArray(field.options) && field.options.length > 0) {
+        const group = document.createElement("div");
+        group.className = "agent-radio-group";
+        field.options.forEach((opt, oIdx) => {
+          const optLabel = document.createElement("label");
+          optLabel.className = "agent-radio-option";
+          const radio = document.createElement("input");
+          radio.type = "radio";
+          radio.name = fieldName;
+          radio.value = opt.label || opt.value;
+          if (field.required && oIdx === 0) radio.required = true;
+          const span = document.createElement("span");
+          span.textContent = opt.label || opt.value;
+          optLabel.appendChild(radio);
+          optLabel.appendChild(span);
+          group.appendChild(optLabel);
+        });
+        wrap.appendChild(group);
+      } else if (field.type === "select" && Array.isArray(field.options) && field.options.length > 0) {
+        const select = document.createElement("select");
+        select.className = "agent-field-control";
+        select.name = fieldName;
+        if (field.required) select.required = true;
+        const placeholderOpt = document.createElement("option");
+        placeholderOpt.value = "";
+        placeholderOpt.textContent = "— اختر إجابة —";
+        select.appendChild(placeholderOpt);
+        field.options.forEach((opt) => {
+          const o = document.createElement("option");
+          o.value = opt.label || opt.value;
+          o.textContent = opt.label || opt.value;
+          select.appendChild(o);
+        });
+        wrap.appendChild(select);
+      } else if (field.type === "textarea") {
+        const ta = document.createElement("textarea");
+        ta.className = "agent-field-control";
+        ta.name = fieldName;
+        ta.rows = 3;
+        ta.dir = "auto";
+        ta.placeholder = field.placeholder || "اكتب إجابتك هنا...";
+        if (field.required) ta.required = true;
+        wrap.appendChild(ta);
+      } else {
+        const inp = document.createElement("input");
+        inp.type = "text";
+        inp.className = "agent-field-control";
+        inp.name = fieldName;
+        inp.dir = "auto";
+        inp.placeholder = field.placeholder || "اكتب إجابتك هنا...";
+        if (field.required) inp.required = true;
+        wrap.appendChild(inp);
+      }
+
+      formEl.appendChild(wrap);
+    });
+
+    const submitBtn = document.createElement("button");
+    submitBtn.type = "submit";
+    submitBtn.className = "studio-btn studio-btn--primary agent-form-submit";
+    submitBtn.textContent = options.form.submitLabel || "إرسال الاختيارات والمتابعة";
+    formEl.appendChild(submitBtn);
+
+    formEl.addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (agentBusy) return;
+      const fd = new FormData(formEl);
+      const lines = [];
+      options.form.fields.forEach((field, fIdx) => {
+        const fieldName = `${formUid}_${field.id || fIdx}`;
+        const val = String(fd.get(fieldName) || "").trim();
+        if (val) {
+          lines.push(`• ${field.label}: ${val}`);
+        }
+      });
+      if (lines.length === 0) return;
+
+      formEl.classList.add("is-submitted");
+      submitBtn.disabled = true;
+      submitBtn.textContent = "✓ تم الإرسال";
+      sendAgentMessage(`إجاباتي:\n${lines.join("\n")}`);
+    });
+
+    bubble.appendChild(formEl);
+  }
+
   if (options.variant === "applied") {
     const badge = document.createElement("span");
     badge.className = "agent-applied-badge";
@@ -334,10 +443,16 @@ async function sendAgentMessage(rawText) {
       el.metaInfo.textContent = `آخر تحديث مباشر: ${data.prompt.updatedAt} بواسطة ${data.prompt.updatedBy} (CMS_KV)`;
       el.manualReviewWarning.hidden = true;
       startCooldownTimer(data.cooldownSeconds || 60);
-    } else if (data.decision === "conflicts" || (Array.isArray(data.conflicts) && data.conflicts.length > 0)) {
+    } else if (
+      data.decision === "conflicts" ||
+      data.decision === "needs_details" ||
+      (Array.isArray(data.conflicts) && data.conflicts.length > 0) ||
+      (data.form && Array.isArray(data.form.fields) && data.form.fields.length > 0)
+    ) {
       appendAgentMessage("assistant", replyText, {
-        variant: "conflict",
+        variant: data.decision === "conflicts" ? "conflict" : undefined,
         conflicts: data.conflicts || [],
+        form: data.form || null,
       });
     } else {
       appendAgentMessage("assistant", replyText);
