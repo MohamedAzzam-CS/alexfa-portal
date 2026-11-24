@@ -209,18 +209,18 @@ const el = {
   tabLightTheme: document.getElementById("tabLightTheme"),
   themeTokensContainer: document.getElementById("themeTokensContainer"),
 
-  // Drawer B: Conservative Puter AI Designer
+  // Drawer B: Gemini Canvas Round-Trip Designer
   aiDrawer: document.getElementById("aiDrawer"),
   closeAiDrawerBtn: document.getElementById("closeAiDrawerBtn"),
-  studioPuterBar: document.getElementById("studioPuterBar"),
-  studioPuterStatus: document.getElementById("studioPuterStatus"),
-  studioPuterSignInBtn: document.getElementById("studioPuterSignInBtn"),
   aiModeMinimalBtn: document.getElementById("aiModeMinimalBtn"),
   aiModeDrasticBtn: document.getElementById("aiModeDrasticBtn"),
-  aiChatMessages: document.getElementById("aiChatMessages"),
-  aiChatForm: document.getElementById("aiChatForm"),
-  aiChatInput: document.getElementById("aiChatInput"),
-  aiChatSendBtn: document.getElementById("aiChatSendBtn"),
+  geminiRequestInput: document.getElementById("geminiRequestInput"),
+  copyAndOpenGeminiBtn: document.getElementById("copyAndOpenGeminiBtn"),
+  geminiCopyStatus: document.getElementById("geminiCopyStatus"),
+  geminiPrSummaryInput: document.getElementById("geminiPrSummaryInput"),
+  geminiImportTextarea: document.getElementById("geminiImportTextarea"),
+  geminiImportError: document.getElementById("geminiImportError"),
+  previewGeminiImportBtn: document.getElementById("previewGeminiImportBtn"),
 
   // AI Preview & Confirmation Modal
   aiPreviewModal: document.getElementById("aiPreviewModal"),
@@ -1284,221 +1284,35 @@ function setStyleScope(scope) {
 }
 
 // ============================================================================
-// 6C. Conservative Puter AI Designer (Incremental Changes + Live Preview -> PR)
+// 6C. Gemini Canvas Round-Trip Designer (Copy -> Design in Gemini -> Paste -> Preview -> PR)
 // ============================================================================
-const STUDIO_PROPOSAL_START = "<<<STUDIO_PROPOSAL>>>";
-const STUDIO_PROPOSAL_END = "<<<END_STUDIO_PROPOSAL>>>";
+let lastPreviewBlobUrl = null;
 
-function isStudioPuterSignedIn() {
-  try {
-    return Boolean(
-      typeof window !== "undefined" &&
-        window.puter &&
-        window.puter.auth &&
-        typeof window.puter.auth.isSignedIn === "function" &&
-        window.puter.auth.isSignedIn()
-    );
-  } catch {
-    return false;
-  }
-}
-
-function refreshStudioPuterBar() {
-  if (!el.studioPuterBar || !el.studioPuterStatus || !el.studioPuterSignInBtn) return;
-  if (isStudioPuterSignedIn()) {
-    el.studioPuterBar.classList.add("is-connected");
-    el.studioPuterStatus.textContent = "✅ متصل بحساب Puter AI";
-    el.studioPuterSignInBtn.textContent = "متصل";
-    el.studioPuterSignInBtn.disabled = true;
-  } else {
-    el.studioPuterBar.classList.remove("is-connected");
-    el.studioPuterStatus.textContent = "سجّل الدخول بحساب Puter لتشغيل المصمم الذكي";
-    el.studioPuterSignInBtn.textContent = "دخول Puter";
-    el.studioPuterSignInBtn.disabled = false;
-  }
-}
-
-function triggerStudioPuterSignIn() {
-  if (!window.puter?.auth?.signIn) {
-    appendStudioAiMsg("assistant", "تعذر تحميل Puter.js. تأكد من اتصالك بالإنترنت.", { isError: true });
-    return;
-  }
-  el.studioPuterSignInBtn.disabled = true;
-  el.studioPuterSignInBtn.textContent = "جاري الاتصال...";
-  Promise.resolve(window.puter.auth.signIn())
-    .then(() => refreshStudioPuterBar())
-    .catch(() => {
-      refreshStudioPuterBar();
-      appendStudioAiMsg("assistant", "لم يكتمل تسجيل الدخول عبر Puter. اسمح بالنوافذ المنبثقة وحاول مجدداً.", { isError: true });
-    });
-}
-
-function appendStudioAiMsg(role, text, options = {}) {
-  if (!el.aiChatMessages) return null;
-  const bubble = document.createElement("div");
-  bubble.className = `studio-ai-msg studio-ai-msg--${role}`;
-  if (options.isError) bubble.classList.add("studio-ai-msg--error");
-
-  const content = document.createElement("div");
-  content.textContent = text;
-  bubble.appendChild(content);
-
-  if (options.proposal) {
-    const previewBtn = document.createElement("button");
-    previewBtn.type = "button";
-    previewBtn.className = "studio-btn studio-btn--primary studio-ai-preview-trigger";
-    previewBtn.textContent = "👁️ معاينة التعديلات وتأكيد فتح PR";
-    previewBtn.addEventListener("click", () => openAiPreviewModal(options.proposal));
-    bubble.appendChild(previewBtn);
-  }
-
-  el.aiChatMessages.appendChild(bubble);
-  el.aiChatMessages.scrollTop = el.aiChatMessages.scrollHeight;
-  return bubble;
-}
-
-function extractPuterAiText(res) {
-  if (!res) return "";
-  if (typeof res === "string") return res.trim();
-  const content =
-    res?.message?.content ??
-    res?.choices?.[0]?.message?.content ??
-    res?.text ??
-    res?.result?.message?.content ??
-    "";
-  if (Array.isArray(content)) {
-    return content.map((p) => (typeof p === "string" ? p : p?.text || "")).join("").trim();
-  }
-  return typeof content === "string" ? content.trim() : "";
-}
-
-function buildStudioAiSystemPrompt(pageFile, bodyHtml, scopedCss) {
-  const isDrastic = aiChangeMode === "drastic";
-  const modeInstructions = isDrastic
-    ? [
-        "ACTIVE MODE: DRASTIC REDESIGN MODE (تعديل جذري):",
-        "- The user explicitly wants bold, comprehensive visual or structural redesigns.",
-        "- You may completely redesign sections, layouts, hero areas, typography, colors, or even replace the entire page body using op 'replaceBody' and custom CSS using 'replaceCss' or 'appendCss'.",
-        "- Keep <nav class=\"navbar\"> and <footer class=\"footer\"> functional unless the user asks to change them, and keep Arabic RTL layout crisp and mobile-responsive.",
-      ]
-    : [
-        "ACTIVE MODE: MINIMAL / CONSERVATIVE MODE (تعديل خفيف):",
-        "- Make small, surgical, non-breaking incremental changes ONLY using 'replace', 'insertAfter', 'insertBefore', or 'appendCss'.",
-        "- Preserve all untouched sections, classes, and responsive styles intact.",
-      ];
-
-  return [
-    "You are a skilled Website Designer AI inside Alexanders Visual Studio.",
-    "All changes will be previewed by the user and opened as a GitHub Pull Request for review.",
-    "",
-    ...modeInstructions,
-    "",
-    "RULES:",
-    "1. Reply in the SAME language the user uses (Arabic or English). Keep replies concise and friendly.",
-    "2. When proposing changes, explain briefly what you changed and append this EXACT proposal block at the end (no markdown code fences):",
-    STUDIO_PROPOSAL_START,
-    isDrastic
-      ? `{"summary":"Short summary of drastic redesign","page":"${pageFile}","changes":[{"op":"replaceBody","text":"FULL redesigned HTML inside <body>...</body>"},{"op":"replaceCss","text":"/* full scoped CSS for the redesign */"}]}`
-      : `{"summary":"Short summary of minimal changes","page":"${pageFile}","changes":[{"op":"replace","find":"EXACT verbatim substring from CURRENT_BODY_HTML","text":"Replacement HTML"},{"op":"insertAfter","find":"EXACT verbatim anchor","text":"New HTML block"},{"op":"appendCss","text":"/* optional scoped CSS */"}]}`,
-    STUDIO_PROPOSAL_END,
-    "3. Allowed ops: 'replace' (exact verbatim 'find' + 'text'), 'insertAfter' (exact 'find' + 'text'), 'insertBefore' (exact 'find' + 'text'), 'appendCss' (CSS in 'text'), 'replaceBody' (full body HTML in 'text'), 'replaceCss' (full scoped CSS in 'text').",
-    "",
-    `=== CURRENT PAGE: ${pageFile} ===`,
-    "<CURRENT_BODY_HTML>",
-    String(bodyHtml || "").slice(0, 26000),
-    "</CURRENT_BODY_HTML>",
-    "",
-    "<CURRENT_SCOPED_CSS>",
-    String(scopedCss || "").slice(0, 6000),
-    "</CURRENT_SCOPED_CSS>",
-  ].join("\n");
-}
-
-function parseStudioAiProposal(rawReply) {
-  const text = String(rawReply || "");
-  const s = text.indexOf(STUDIO_PROPOSAL_START);
-  const e = text.indexOf(STUDIO_PROPOSAL_END);
-  if (s === -1 || e === -1 || e <= s) {
-    return { cleanText: text.trim(), proposal: null };
-  }
-  const cleanText = [text.slice(0, s).trim(), text.slice(e + STUDIO_PROPOSAL_END.length).trim()]
-    .filter(Boolean)
-    .join("\n\n")
-    .trim();
-  const rawJson = text
-    .slice(s + STUDIO_PROPOSAL_START.length, e)
-    .trim()
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
-
-  try {
-    const parsed = JSON.parse(rawJson);
-    const pageFile = String(parsed?.page || currentPageFile).trim();
-    const changes = Array.isArray(parsed?.changes) ? parsed.changes : [];
-    if (changes.length === 0) return { cleanText: cleanText || text.trim(), proposal: null };
-    return {
-      cleanText: cleanText || "جهّزت التعديل — اضغط معاينة لمشاهدته قبل فتح PR:",
-      proposal: {
-        pageFile: SITE_PAGES.includes(pageFile) ? pageFile : currentPageFile,
-        summary: String(parsed?.summary || "تعديل تصميم عبر المصمم الذكي").trim(),
-        changes,
-      },
-    };
-  } catch {
-    return { cleanText: cleanText || text.trim(), proposal: null };
-  }
-}
-
-function applyIncrementalStudioChanges(baseBodyHtml, baseScopedCss, changes) {
-  let bodyHtml = String(baseBodyHtml || "");
-  let scopedCss = String(baseScopedCss || "");
-  const applied = [];
-
-  for (const ch of changes) {
-    if (!ch || typeof ch !== "object") continue;
-    const op = String(ch.op || "").trim();
-    const find = typeof ch.find === "string" ? ch.find : "";
-    const text = typeof ch.text === "string" ? ch.text : "";
-
-    if (op === "replaceBody" && text.trim()) {
-      bodyHtml = text.trim();
-      applied.push({ op: "replaceBody", label: "⚡ إعادة تصميم كاملة لمحتوى الصفحة" });
-    } else if (op === "replaceCss" && text.trim()) {
-      scopedCss = text.trim();
-      applied.push({ op: "replaceCss", label: "🎨 تحديث كامل لتنسيق الصفحة (CSS)" });
-    } else if (op === "appendCss" && text.trim()) {
-      scopedCss = `${scopedCss}\n${text.trim()}`.trim();
-      applied.push({ op: "appendCss", label: "🎨 إضافة تنسيق CSS" });
-    } else if (op === "replace" && find) {
-      if (!bodyHtml.includes(find)) {
-        throw new Error(`تعذر مطابقة الجزء المطلوب تعديله بدقة: "${find.slice(0, 60)}"`);
-      }
-      bodyHtml = bodyHtml.replace(find, text);
-      applied.push({ op: "replace", label: `🔄 تعديل جزء من الصفحة` });
-    } else if (op === "insertAfter" && find && text) {
-      if (!bodyHtml.includes(find)) {
-        throw new Error(`تعذر إيجاد موضع الإضافة: "${find.slice(0, 60)}"`);
-      }
-      bodyHtml = bodyHtml.replace(find, `${find}\n${text}`);
-      applied.push({ op: "insertAfter", label: `➕ إضافة عنصر/قسم جديد` });
-    } else if (op === "insertBefore" && find && text) {
-      if (!bodyHtml.includes(find)) {
-        throw new Error(`تعذر إيجاد موضع الإضافة: "${find.slice(0, 60)}"`);
-      }
-      bodyHtml = bodyHtml.replace(find, `${text}\n${find}`);
-      applied.push({ op: "insertBefore", label: `➕ إضافة عنصر/قسم جديد` });
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fallback below
     }
   }
-
-  if (applied.length === 0) {
-    throw new Error("لم يتم تطبيق أي تعديل صالح.");
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch {
+    ok = false;
   }
-
-  return { bodyHtml, scopedCss, applied };
+  ta.remove();
+  return ok;
 }
-
-let lastPreviewBlobUrl = null;
 
 function openPreviewHtmlInNewTab(htmlString) {
   if (!htmlString) return;
@@ -1515,66 +1329,146 @@ function openPreviewHtmlInNewTab(htmlString) {
   }
 }
 
-function openAiPreviewModal(proposal) {
+async function copyAndOpenGeminiCanvas() {
+  if (!el.copyAndOpenGeminiBtn) return;
+  el.geminiCopyStatus.hidden = true;
+  el.copyAndOpenGeminiBtn.disabled = true;
+  el.copyAndOpenGeminiBtn.textContent = "جاري تجهيز ونسخ الكود...";
+
+  try {
+    const siteOrigin = window.location.origin; // e.g. https://alexfa.me
+    const liveBody = normalizeExportedHtml(editor.getHtml());
+    const liveCss = editor.getCss({ avoidProtected: true }) || "";
+    const draft = pageDrafts.get(currentPageFile) || {
+      title: `Alexanders | ${currentPageFile}`,
+      extraCss: PAGE_EXTRA_CSS[currentPageFile] || [],
+    };
+
+    const fullHtml = buildHtmlDocument({
+      filename: currentPageFile,
+      title: draft.title,
+      extraCss: draft.extraCss,
+      bodyHtml: liveBody,
+      scopedCss: liveCss,
+    });
+
+    // Convert relative assets/ & css/ & js/ URLs to absolute https://alexfa.me/... URLs
+    // so every image and stylesheet renders live inside Gemini Canvas!
+    const canvasReadyHtml = fullHtml
+      .replace(/(href|src|srcset)="(assets\/|css\/|js\/|favicon\.webp)/g, `$1="${siteOrigin}/$2`);
+
+    const userReq = (el.geminiRequestInput?.value || "").trim();
+    const modeNote =
+      aiChangeMode === "drastic"
+        ? "Mode: DRASTIC REDESIGN — feel free to boldly redesign the layout, sections, typography, and colors while keeping Arabic RTL and mobile responsiveness."
+        : "Mode: MINIMAL / CONSERVATIVE — make clean, focused improvements while preserving the existing structure and branding.";
+
+    const promptBundle = [
+      `Please open this page (${currentPageFile}) in Gemini Canvas so I can preview and edit it live.`,
+      modeNote,
+      userReq ? `My requested changes: ${userReq}` : "Wait for my design edits or suggest visual improvements.",
+      `Important rules for the final HTML:`,
+      `- Keep all existing image/CSS URLs pointing to ${siteOrigin}/... so images render in Canvas.`,
+      `- Keep dir="rtl" and Arabic Cairo/Poppins fonts.`,
+      `- When I'm done, provide the complete updated HTML document so I can copy it back into my website.`,
+      "",
+      "```html",
+      canvasReadyHtml,
+      "```",
+    ].join("\n");
+
+    const copied = await copyTextToClipboard(promptBundle);
+    window.open("https://gemini.google.com/app", "_blank", "noopener");
+
+    el.geminiCopyStatus.textContent = copied
+      ? "✅ تم نسخ كود الصفحة بالكامل وفتح Gemini! فعّل وضع Canvas واضغط لصق (Ctrl+V)."
+      : "تم فتح Gemini — إذا لم يُنسخ تلقائياً، اسمح بصلاحية الحافظة وحاول مجدداً.";
+    el.geminiCopyStatus.hidden = false;
+  } finally {
+    el.copyAndOpenGeminiBtn.disabled = false;
+    el.copyAndOpenGeminiBtn.textContent = "📋 نسخ الكود وفتح Gemini Canvas ↗️";
+  }
+}
+
+function cleanGeminiPastedHtml(rawPasted) {
+  let html = String(rawPasted || "").trim();
+  // Strip optional markdown code fences (```html ... ```)
+  html = html.replace(/^```(?:html)?\s*/i, "").replace(/\s*```$/i, "").trim();
+
+  if (!html || (!html.includes("<") && !html.includes(">"))) {
+    throw new Error("يرجى لصق كود HTML صالح من Gemini Canvas أولاً.");
+  }
+
+  // Convert absolute site URLs back to clean relative repo paths
+  const siteOriginEscaped = window.location.origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const absRegex = new RegExp(`(href|src|srcset)="${siteOriginEscaped}/(assets/|css/|js/|favicon\\.webp|chat-widget\\.(?:js|css))`, "gi");
+  html = html.replace(absRegex, '$1="$2');
+  // Also normalize hardcoded https://alexfa.me/ if copied from another origin
+  html = html.replace(
+    /(href|src|srcset)="https?:\/\/(?:www\.)?alexfa\.me\/(assets\/|css\/|js\/|favicon\.webp|chat-widget\.(?:js|css))/gi,
+    '$1="$2'
+  );
+  // Strip any temporary <base ...> tag
+  html = html.replace(/<base\b[^>]*>/gi, "");
+
+  // If user pasted only body fragment instead of full <!DOCTYPE html>, wrap it cleanly
+  if (!/<html[\s>]/i.test(html)) {
+    const draft = pageDrafts.get(currentPageFile) || {
+      title: `Alexanders | ${currentPageFile}`,
+      extraCss: PAGE_EXTRA_CSS[currentPageFile] || [],
+    };
+    html = buildHtmlDocument({
+      filename: currentPageFile,
+      title: draft.title,
+      extraCss: draft.extraCss,
+      bodyHtml: html,
+      scopedCss: "",
+    });
+  }
+
+  return html;
+}
+
+function previewGeminiImportedHtml() {
+  el.geminiImportError.hidden = true;
   el.aiPreviewError.hidden = true;
   el.aiPreviewResult.hidden = true;
   el.aiPreviewConfirmCheckbox.checked = false;
   el.aiConfirmOpenPrBtn.disabled = true;
 
   try {
-    const liveBody = normalizeExportedHtml(editor.getHtml());
-    const liveCss = editor.getCss({ avoidProtected: true }) || "";
-    const draft = pageDrafts.get(proposal.pageFile) || {
-      title: `Alexanders | ${proposal.pageFile}`,
-      extraCss: PAGE_EXTRA_CSS[proposal.pageFile] || [],
-      bodyHtml: liveBody,
-      scopedCss: liveCss,
-    };
+    const cleanedFullHtml = cleanGeminiPastedHtml(el.geminiImportTextarea?.value);
+    const { title, bodyHtml, scopedCss } = extractEditableBody(cleanedFullHtml);
+    const normalizedBody = normalizeExportedHtml(bodyHtml);
+    const summary =
+      (el.geminiPrSummaryInput?.value || "").trim() ||
+      `تحديث تصميم ${currentPageFile} عبر Gemini Canvas`;
 
-    const baseBody = proposal.pageFile === currentPageFile ? liveBody : draft.bodyHtml;
-    const baseCss = proposal.pageFile === currentPageFile ? liveCss : draft.scopedCss;
-
-    const { bodyHtml: updatedBodyHtml, scopedCss: updatedScopedCss, applied } =
-      applyIncrementalStudioChanges(baseBody, baseCss, proposal.changes);
-
-    const fullDocForPr = buildHtmlDocument({
-      filename: proposal.pageFile,
-      title: draft.title,
-      extraCss: draft.extraCss,
-      bodyHtml: updatedBodyHtml,
-      scopedCss: updatedScopedCss,
-    });
-
-    // Use absolute site origin <base href="https://alexfa.me/"> so CSS & assets load cleanly
-    // both in the new full-screen browser tab (blob URL) and in the inline preview iframe.
     const siteBaseHref = `${window.location.origin}/`;
-    const previewHtml = fullDocForPr
-      .replace("<head>", `<head>\n  <base href="${siteBaseHref}">`)
+    const previewHtml = cleanedFullHtml
+      .replace(/<head([^>]*)>/i, `<head$1>\n  <base href="${siteBaseHref}">`)
       .replace(/<script[\s\S]*?<\/script>/gi, "");
 
     pendingAiPreview = {
-      pageFile: proposal.pageFile,
-      title: draft.title,
-      extraCss: draft.extraCss,
-      summary: proposal.summary,
-      applied,
-      updatedBodyHtml,
-      updatedScopedCss,
-      fullDocForPr,
+      pageFile: currentPageFile,
+      title,
+      extraCss: PAGE_EXTRA_CSS[currentPageFile] || [],
+      summary,
+      updatedBodyHtml: normalizedBody,
+      updatedScopedCss: scopedCss,
+      fullDocForPr: cleanedFullHtml,
       previewHtml,
     };
 
-    // Open full-screen preview immediately in a new tab (synchronously inside click gesture)
+    // Open full-screen preview immediately in a new tab
     openPreviewHtmlInNewTab(previewHtml);
 
-    el.aiPreviewSummary.textContent = `${proposal.pageFile} — ${proposal.summary}`;
+    el.aiPreviewSummary.textContent = `${currentPageFile} — ${summary}`;
     el.aiPreviewDiffList.innerHTML = "";
-    applied.forEach((item, idx) => {
-      const pill = document.createElement("span");
-      pill.className = "studio-preview-diff-pill";
-      pill.textContent = `${idx + 1}. ${item.label}`;
-      el.aiPreviewDiffList.appendChild(pill);
-    });
+    const pill = document.createElement("span");
+    pill.className = "studio-preview-diff-pill";
+    pill.textContent = `✨ كود مستورد من Gemini Canvas (${cleanedFullHtml.length.toLocaleString()} حرف)`;
+    el.aiPreviewDiffList.appendChild(pill);
 
     el.aiPreviewFrame.classList.remove("is-mobile");
     el.aiPreviewDesktopBtn.classList.add("is-active");
@@ -1582,9 +1476,8 @@ function openAiPreviewModal(proposal) {
     el.aiPreviewFrame.srcdoc = previewHtml;
     el.aiPreviewModal.hidden = false;
   } catch (err) {
-    appendStudioAiMsg("assistant", `تعذر تجهيز المعاينة: ${err?.message || "اطلب من المساعد إعادة الصياغة."}`, {
-      isError: true,
-    });
+    el.geminiImportError.textContent = err?.message || "تعذر قراءة كود HTML.";
+    el.geminiImportError.hidden = false;
   }
 }
 
@@ -1628,7 +1521,7 @@ async function confirmAndOpenAiPr() {
       credentials: "include",
       headers: getStudioAuthHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
-        summary: `[AI Studio] ${p.summary}`,
+        summary: `[Gemini Canvas] ${p.summary}`,
         files: [{ path: p.pageFile, content: p.fullDocForPr, encoding: "utf-8" }],
       }),
     });
@@ -1650,64 +1543,12 @@ async function confirmAndOpenAiPr() {
 
     el.aiPreviewResult.innerHTML = `✅ تم فتح طلب المراجعة بنجاح (PR #${data.prNumber})!<br><a href="${escapeHtml(data.prUrl)}" target="_blank" rel="noopener noreferrer">افتح الـ Pull Request على GitHub للموافقة النهائية ←</a>`;
     el.aiPreviewResult.hidden = false;
-    appendStudioAiMsg("assistant", `✅ تم فتح Pull Request #${data.prNumber} للتعديلات بنجاح!`);
   } catch (err) {
     el.aiPreviewError.textContent = err?.message || "فشل فتح Pull Request.";
     el.aiPreviewError.hidden = false;
   } finally {
     el.aiConfirmOpenPrBtn.disabled = !el.aiPreviewConfirmCheckbox.checked;
     el.aiConfirmOpenPrBtn.textContent = "✅ تأكيد وفتح Pull Request";
-  }
-}
-
-async function sendStudioAiMessage(rawText) {
-  const userText = String(rawText || "").trim();
-  if (!userText || aiBusy) return;
-
-  if (!window.puter?.ai?.chat || !isStudioPuterSignedIn()) {
-    appendStudioAiMsg("assistant", "يرجى الضغط على 'دخول Puter' بالأعلى لتشغيل المصمم الذكي أولاً.", {
-      isError: true,
-    });
-    return;
-  }
-
-  appendStudioAiMsg("user", userText);
-  if (el.aiChatInput) el.aiChatInput.value = "";
-  aiBusy = true;
-  el.aiChatSendBtn.disabled = true;
-  el.aiChatSendBtn.textContent = "جاري تجهيز التعديل...";
-
-  const thinking = appendStudioAiMsg("assistant", "جاري قراءة كود الصفحة وتجهيز تعديل تدريجي آمن...");
-
-  try {
-    const liveBody = normalizeExportedHtml(editor.getHtml());
-    const liveCss = editor.getCss({ avoidProtected: true }) || "";
-    const sysPrompt = buildStudioAiSystemPrompt(currentPageFile, liveBody, liveCss);
-
-    const msgs = [
-      { role: "system", content: sysPrompt },
-      ...aiChatHistory.slice(-8),
-      { role: "user", content: userText },
-    ];
-
-    const puterRes = await window.puter.ai.chat(msgs);
-    const reply = extractPuterAiText(puterRes);
-    if (thinking) thinking.remove();
-    if (!reply) throw new Error("لم يتم استلام رد من Puter AI.");
-
-    const { cleanText, proposal } = parseStudioAiProposal(reply);
-    appendStudioAiMsg("assistant", cleanText, { proposal });
-
-    aiChatHistory.push({ role: "user", content: userText });
-    aiChatHistory.push({ role: "assistant", content: cleanText });
-    if (aiChatHistory.length > 14) aiChatHistory = aiChatHistory.slice(-14);
-  } catch (err) {
-    if (thinking) thinking.remove();
-    appendStudioAiMsg("assistant", `حدث خطأ: ${err?.message || "حاول مرة أخرى."}`, { isError: true });
-  } finally {
-    aiBusy = false;
-    el.aiChatSendBtn.disabled = false;
-    el.aiChatSendBtn.textContent = "✨ إرسال للمصمم الذكي";
   }
 }
 
@@ -1720,13 +1561,6 @@ async function enterStudio() {
 
   if (!editor) {
     renderFontLibraryOptions();
-    refreshStudioPuterBar();
-    if (el.aiChatMessages && el.aiChatMessages.children.length === 0) {
-      appendStudioAiMsg(
-        "assistant",
-        "أهلاً بك في المصمم الذكي! ✨\nاختر بين (تعديل خفيف) للتغييرات الدقيقة أو (تعديل جذري) لإعادة تصميم كاملة — وهوريك معاينة مباشرة قبل فتح Pull Request."
-      );
-    }
     initGrapesEditor();
     await loadVariablesCss();
     await loadPageIntoCanvas(el.pageSelector.value || "index.html");
@@ -1822,7 +1656,7 @@ function wireEvents() {
   el.tabDarkTheme.addEventListener("click", () => setCanvasTheme("dark"));
   el.tabLightTheme.addEventListener("click", () => setCanvasTheme("light"));
 
-  // Drawer B: Conservative Puter AI Designer
+  // Drawer B: Gemini Canvas Round-Trip Designer
   el.aiDrawerBtn.addEventListener("click", () => {
     const opening = el.aiDrawer.hidden;
     el.aiDrawer.hidden = !opening;
@@ -1830,14 +1664,12 @@ function wireEvents() {
     if (opening) {
       el.themeDrawer.hidden = true;
       el.styleDrawerBtn.classList.remove("is-active");
-      refreshStudioPuterBar();
     }
   });
   el.closeAiDrawerBtn.addEventListener("click", () => {
     el.aiDrawer.hidden = true;
     el.aiDrawerBtn.classList.remove("is-active");
   });
-  el.studioPuterSignInBtn.addEventListener("click", triggerStudioPuterSignIn);
   el.aiModeMinimalBtn.addEventListener("click", () => {
     aiChangeMode = "minimal";
     el.aiModeMinimalBtn.classList.add("is-active");
@@ -1848,16 +1680,8 @@ function wireEvents() {
     el.aiModeDrasticBtn.classList.add("is-active");
     el.aiModeMinimalBtn.classList.remove("is-active");
   });
-  el.aiChatForm.addEventListener("submit", (e) => {
-    e.preventDefault();
-    sendStudioAiMessage(el.aiChatInput.value);
-  });
-  el.aiChatInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendStudioAiMessage(el.aiChatInput.value);
-    }
-  });
+  el.copyAndOpenGeminiBtn.addEventListener("click", copyAndOpenGeminiCanvas);
+  el.previewGeminiImportBtn.addEventListener("click", previewGeminiImportedHtml);
 
   // AI Preview Modal
   const closePreview = () => {
@@ -1886,7 +1710,6 @@ function wireEvents() {
   el.aiApplyCanvasOnlyBtn.addEventListener("click", () => {
     applyPendingAiToCanvas();
     el.aiPreviewModal.hidden = true;
-    appendStudioAiMsg("assistant", "📥 تم تطبيق التعديلات داخل المحرر فقط — يمكنك متابعة التعديل وإرسال PR لاحقاً.");
   });
   el.aiConfirmOpenPrBtn.addEventListener("click", confirmAndOpenAiPr);
 

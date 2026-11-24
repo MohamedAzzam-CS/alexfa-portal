@@ -11,7 +11,6 @@
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Poppins:wght@600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/grapesjs@0.21.13/dist/css/grapes.min.css">
   <link rel="stylesheet" href="studio.css">
-  <script src="https://js.puter.com/v2/"></script>
 </head>
 <body>
 
@@ -63,7 +62,7 @@
         <button id="redoBtn" type="button" class="studio-btn" title="إعادة">↪️ إعادة</button>
         <button id="revertOriginalBtn" type="button" class="studio-btn" title="إلغاء جميع التعديلات والعودة للنسخة الأصلية">↺ العودة للأصل</button>
         <button id="styleDrawerBtn" type="button" class="studio-btn">🖌️ الخطوط والألوان</button>
-        <button id="aiDrawerBtn" type="button" class="studio-btn studio-btn--ai">✨ المصمم الذكي (AI)</button>
+        <button id="aiDrawerBtn" type="button" class="studio-btn studio-btn--ai">✨ Gemini Canvas</button>
       </div>
 
       <div class="studio-topbar-group">
@@ -164,40 +163,68 @@
         </div>
       </aside>
 
-      <!-- Drawer B: Conservative Puter AI Designer (Incremental Changes + Preview before PR) -->
+      <!-- Drawer B: Gemini Canvas Round-Trip Designer (Copy -> Design in Canvas -> Paste -> Preview -> PR) -->
       <aside id="aiDrawer" class="studio-drawer studio-ai-drawer" hidden>
         <div class="studio-drawer-header">
-          <h2>✨ المصمم الذكي (Puter AI)</h2>
+          <h2>✨ التصميم عبر Gemini Canvas</h2>
           <button id="closeAiDrawerBtn" type="button" class="studio-btn">✕</button>
         </div>
 
-        <div id="studioPuterBar" class="studio-puter-bar">
-          <span id="studioPuterStatus">سجّل الدخول بحساب Puter لتشغيل المصمم الذكي</span>
-          <button id="studioPuterSignInBtn" type="button" class="studio-btn studio-btn--primary" style="padding: 6px 12px;">
-            دخول Puter
-          </button>
+        <div class="studio-drawer-body" style="display:flex;flex-direction:column;gap:14px;">
+          <!-- Step 1: Copy current page & open Gemini Canvas -->
+          <div class="studio-scope-box" style="margin:0;">
+            <div class="studio-token-group-title" style="margin-top:0;">1️⃣ انسخ الصفحة وافتح Gemini Canvas</div>
+            <p style="font-size:0.8rem;color:var(--studio-muted);margin:0 0 10px;line-height:1.55;">
+              سيتم تجهيز كود الصفحة الحالية مع روابط الصور والتنسيقات كاملة ونسخها تلقائياً، ثم فتح Gemini. فعّل وضع <strong>Canvas</strong> واضغط لصق (<strong>Ctrl+V</strong>).
+            </p>
+
+            <div class="studio-scope-toggle" style="margin-bottom:10px;">
+              <button type="button" id="aiModeMinimalBtn" class="studio-btn is-active">🎯 تعديل خفيف</button>
+              <button type="button" id="aiModeDrasticBtn" class="studio-btn">⚡ تعديل جذري</button>
+            </div>
+
+            <div class="studio-field" style="margin-bottom:10px;">
+              <label for="geminiRequestInput">ماذا تريد تعديله؟ (اختياري)</label>
+              <textarea
+                id="geminiRequestInput"
+                class="studio-textarea"
+                rows="2"
+                dir="auto"
+                placeholder="مثال: حسّن شكل القسم الرئيسي وأضف بطاقات أنيقة بألوان متناسقة..."
+              ></textarea>
+            </div>
+
+            <button id="copyAndOpenGeminiBtn" type="button" class="studio-btn studio-btn--primary studio-btn--full">
+              📋 نسخ الكود وفتح Gemini Canvas ↗️
+            </button>
+            <div id="geminiCopyStatus" class="studio-pr-result" style="margin-top:8px;" hidden></div>
+          </div>
+
+          <!-- Step 2: Paste finished HTML back from Gemini Canvas -->
+          <div class="studio-scope-box" style="margin:0;">
+            <div class="studio-token-group-title" style="margin-top:0;">2️⃣ الصق الكود النهائي من Gemini Canvas</div>
+            <p style="font-size:0.8rem;color:var(--studio-muted);margin:0 0 8px;line-height:1.55;">
+              بعد ما يعجبك التصميم في Gemini Canvas، انسخ كود HTML النهائي والصقه هنا لمعاينته في تبويب كامل وفتح Pull Request.
+            </p>
+            <div class="studio-field" style="margin-bottom:8px;">
+              <label for="geminiPrSummaryInput">وصف مختصر للـ PR (اختياري)</label>
+              <input id="geminiPrSummaryInput" class="studio-input" type="text" placeholder="مثال: تحديث تصميم الصفحة عبر Gemini Canvas">
+            </div>
+            <div class="studio-field" style="margin-bottom:10px;">
+              <textarea
+                id="geminiImportTextarea"
+                class="studio-textarea"
+                rows="7"
+                dir="ltr"
+                placeholder="<!DOCTYPE html> ... الصق كود HTML من Gemini Canvas هنا"
+              ></textarea>
+            </div>
+            <div id="geminiImportError" class="studio-error" hidden></div>
+            <button id="previewGeminiImportBtn" type="button" class="studio-btn studio-btn--primary studio-btn--full">
+              👁️ معاينة في تبويب جديد وتأكيد PR
+            </button>
+          </div>
         </div>
-
-        <div class="studio-theme-tabs" style="padding: 8px 12px;">
-          <button type="button" id="aiModeMinimalBtn" class="studio-btn is-active" title="تعديلات خفيفة ومتحفظة تحافظ على التصميم الحالي">🎯 تعديل خفيف (Minimal)</button>
-          <button type="button" id="aiModeDrasticBtn" class="studio-btn" title="إعادة تصميم كاملة وتغييرات جذرية في الصفحة">⚡ تعديل جذري (Drastic)</button>
-        </div>
-
-        <div id="aiChatMessages" class="studio-ai-messages" aria-live="polite"></div>
-
-        <form id="aiChatForm" class="studio-ai-composer">
-          <textarea
-            id="aiChatInput"
-            class="studio-textarea"
-            rows="2"
-            dir="auto"
-            placeholder="اطلب أي تعديل على الصفحة الحالية... (يظهر في معاينة قبل فتح PR)"
-            required
-          ></textarea>
-          <button id="aiChatSendBtn" type="submit" class="studio-btn studio-btn--primary studio-btn--full">
-            ✨ إرسال للمصمم الذكي
-          </button>
-        </form>
       </aside>
     </div>
   </div>
