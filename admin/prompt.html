@@ -2,22 +2,30 @@
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="robots" content="noindex, nofollow">
-  <title>Alexanders AI Prompt Admin | إدارة برومبت الذكاء الاصطناعي</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Alexanders AI Prompt Admin | مساعد إدارة الذكاء الاصطناعي</title>
   <link rel="icon" href="../favicon.webp" type="image/webp">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="studio.css">
   <style>
-    body {
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+    html, body {
+      overflow-x: hidden;
       overflow-y: auto;
+      -webkit-text-size-adjust: 100%;
+      touch-action: manipulation;
     }
     .prompt-page-shell {
       max-width: 960px;
       margin: 0 auto;
-      padding: 28px 20px 60px;
+      padding: max(20px, env(safe-area-inset-top)) 16px calc(56px + env(safe-area-inset-bottom));
     }
     .prompt-header {
       display: flex;
@@ -25,26 +33,310 @@
       justify-content: space-between;
       gap: 12px;
       flex-wrap: wrap;
-      margin-bottom: 22px;
-      padding-bottom: 16px;
+      margin-bottom: 18px;
+      padding-bottom: 14px;
       border-bottom: 1px solid var(--studio-border);
     }
     .prompt-header h1 {
-      font-size: 1.45rem;
+      font-size: clamp(1.18rem, 3.6vw, 1.48rem);
       font-weight: 800;
       color: var(--studio-accent);
+      margin: 0 0 4px;
+    }
+    .prompt-header-sub {
+      font-size: 0.86rem;
+      color: var(--studio-muted);
+      margin: 0;
     }
     .prompt-card {
       background: var(--studio-surface);
       border: 1px solid var(--studio-border);
       border-radius: 18px;
-      padding: 24px;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+      padding: 20px;
+      box-shadow: 0 18px 46px rgba(0, 0, 0, 0.42);
     }
     .prompt-meta {
       font-size: 0.82rem;
       color: var(--studio-muted);
-      margin-bottom: 16px;
+      margin-bottom: 14px;
+    }
+
+    /* ================= AI Prompt Agent Chat (Primary Top Section) ================= */
+    .agent-card {
+      border: 1px solid rgba(255, 209, 102, 0.32);
+      background: linear-gradient(180deg, rgba(255, 209, 102, 0.05) 0%, var(--studio-surface) 24%);
+    }
+    .agent-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .agent-title-wrap h2 {
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: var(--studio-accent);
+      margin: 0 0 2px;
+    }
+    .agent-title-wrap p {
+      font-size: 0.84rem;
+      color: var(--studio-muted);
+      margin: 0;
+    }
+    .agent-status-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .cooldown-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      background: rgba(34, 197, 94, 0.14);
+      border: 1px solid rgba(34, 197, 94, 0.35);
+      color: #86efac;
+      white-space: nowrap;
+    }
+    .cooldown-pill.is-cooling {
+      background: rgba(245, 158, 11, 0.16);
+      border-color: rgba(245, 158, 11, 0.45);
+      color: #fcd34d;
+    }
+    .agent-messages {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 240px;
+      max-height: 460px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 14px;
+      border-radius: 14px;
+      background: rgba(0, 0, 0, 0.24);
+      border: 1px solid var(--studio-border);
+      margin-bottom: 12px;
+    }
+    .agent-msg {
+      max-width: 90%;
+      padding: 11px 14px;
+      border-radius: 14px;
+      font-size: 0.92rem;
+      line-height: 1.65;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .agent-msg--assistant {
+      align-self: flex-start;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: var(--studio-text);
+      border-top-right-radius: 4px;
+    }
+    .agent-msg--user {
+      align-self: flex-end;
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      color: #ffffff;
+      border-top-left-radius: 4px;
+    }
+    .agent-msg--applied {
+      border-color: rgba(34, 197, 94, 0.45);
+      background: rgba(34, 197, 94, 0.1);
+    }
+    .agent-msg--conflict {
+      border-color: rgba(245, 158, 11, 0.5);
+      background: rgba(245, 158, 11, 0.09);
+    }
+    .agent-msg--error {
+      border-color: rgba(239, 68, 68, 0.5);
+      background: rgba(239, 68, 68, 0.1);
+    }
+    .agent-conflict-list {
+      margin-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .agent-conflict-item {
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: rgba(0, 0, 0, 0.28);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      font-size: 0.85rem;
+    }
+    .agent-conflict-item strong {
+      display: block;
+      color: #fcd34d;
+      margin-bottom: 4px;
+    }
+    .agent-conflict-item .conflict-q {
+      display: block;
+      margin-top: 4px;
+      color: #fef3c7;
+      font-weight: 700;
+    }
+    .agent-applied-badge {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.76rem;
+      font-weight: 700;
+      background: rgba(34, 197, 94, 0.2);
+      color: #86efac;
+    }
+
+    .agent-quick-chips {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .agent-chip {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--studio-border);
+      color: var(--studio-text);
+      padding: 7px 12px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-family: inherit;
+      cursor: pointer;
+      min-height: 36px;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .agent-chip:hover {
+      background: rgba(255, 209, 102, 0.14);
+      border-color: rgba(255, 209, 102, 0.45);
+    }
+
+    .agent-composer {
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+    }
+    .agent-input {
+      flex: 1;
+      min-height: 48px;
+      max-height: 140px;
+      resize: vertical;
+      padding: 11px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--studio-border);
+      background: rgba(0, 0, 0, 0.3);
+      color: var(--studio-text);
+      font-family: inherit;
+      font-size: 16px; /* Prevents iOS Safari auto-zoom on focus */
+      line-height: 1.5;
+    }
+    .agent-input:focus {
+      outline: none;
+      border-color: var(--studio-accent);
+    }
+    .agent-send-btn {
+      min-height: 48px;
+      min-width: 96px;
+      white-space: nowrap;
+    }
+
+    /* ================= Collapsible Manual Fine-Tuning ================= */
+    .manual-details {
+      margin-top: 22px;
+    }
+    .manual-summary {
+      list-style: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 1.08rem;
+      font-weight: 800;
+      color: var(--studio-accent);
+      padding: 4px 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .manual-summary::-webkit-details-marker {
+      display: none;
+    }
+    .manual-summary-hint {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--studio-muted);
+    }
+    .manual-body {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--studio-border);
+    }
+
+    /* Manual AI Review Conflict Box */
+    .review-warning-box {
+      margin: 14px 0;
+      padding: 16px;
+      border-radius: 14px;
+      background: rgba(245, 158, 11, 0.11);
+      border: 1px solid rgba(245, 158, 11, 0.45);
+    }
+    .review-warning-box h3 {
+      margin: 0 0 6px;
+      font-size: 1rem;
+      color: #fcd34d;
+    }
+    .review-warning-box p {
+      margin: 0 0 10px;
+      font-size: 0.88rem;
+      color: var(--studio-text);
+    }
+    .review-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+
+    /* Mobile & Apple OS (iOS / iPadOS) Ergonomics */
+    @media (max-width: 680px) {
+      .prompt-card {
+        padding: 15px;
+        border-radius: 15px;
+      }
+      .studio-input,
+      .studio-textarea,
+      .agent-input {
+        font-size: 16px !important; /* Strict anti-zoom for iOS Safari */
+      }
+      .studio-btn {
+        min-height: 44px;
+      }
+      .agent-messages {
+        max-height: 52dvh;
+        min-height: 210px;
+        padding: 10px;
+      }
+      .agent-msg {
+        max-width: 96%;
+        font-size: 0.9rem;
+      }
+      .agent-composer {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .agent-send-btn {
+        width: 100%;
+      }
+      .studio-modal-actions {
+        flex-direction: column-reverse;
+      }
+      .studio-modal-actions .studio-btn {
+        width: 100%;
+      }
     }
   </style>
 </head>
@@ -60,11 +352,11 @@
       <form id="promptLoginForm">
         <div class="studio-field">
           <label for="promptAdminName">الاسم</label>
-          <input id="promptAdminName" class="studio-input" type="text" placeholder="مثال: مدير الكيان" required>
+          <input id="promptAdminName" class="studio-input" type="text" placeholder="مثال: مدير الكيان" autocomplete="name" required>
         </div>
         <div class="studio-field">
           <label for="promptAdminPassword">كلمة مرور مدير البرومبت</label>
-          <input id="promptAdminPassword" class="studio-input" type="password" placeholder="••••••••" required>
+          <input id="promptAdminPassword" class="studio-input" type="password" placeholder="••••••••" autocomplete="current-password" required>
         </div>
         <button id="promptLoginSubmitBtn" type="submit" class="studio-btn studio-btn--primary studio-btn--full">
           دخول إلى لوحة البرومبت
@@ -73,44 +365,104 @@
     </div>
   </div>
 
-  <!-- 2. Standalone Prompt Editor Workspace -->
+  <!-- 2. Standalone Prompt Admin Workspace -->
   <main id="promptApp" class="prompt-page-shell" hidden>
     <header class="prompt-header">
       <div>
-        <h1>🤖 لوحة التحكم في برومبت الذكاء الاصطناعي</h1>
-        <p style="font-size: 0.88rem; color: var(--studio-muted);">تحديث مباشر لقاعدة المعرفة وتعليمات المساعد الذكي على Cloudflare KV بدون Pull Request.</p>
+        <h1>🤖 لوحة إدارة المساعد الذكي</h1>
+        <p class="prompt-header-sub">حدّث معلومات وتعليمات البوت بسهولة عن طريق المحادثة بدون تعديل يدوي معقد.</p>
       </div>
       <button id="promptLogoutBtn" type="button" class="studio-btn studio-btn--danger">تسجيل خروج</button>
     </header>
 
-    <section class="prompt-card">
-      <div id="promptMetaInfo" class="prompt-meta"></div>
-
-      <div class="studio-field">
-        <label for="promptInstructionsInput">تعليمات النظام والضوابط (System Prompt & Guardrails)</label>
-        <textarea id="promptInstructionsInput" class="studio-textarea" rows="10" dir="auto"></textarea>
+    <!-- PRIMARY TOP SECTION: AI Prompt Assistant Chatbot -->
+    <section class="prompt-card agent-card" aria-label="مساعد تحديث البرومبت الذكي">
+      <div class="agent-topbar">
+        <div class="agent-title-wrap">
+          <h2>✨ المساعد الذكي لتعديل البرومبت</h2>
+          <p>اكتب التعديل اللي عايزه بكلام عادي — هيحافظ على باقي المعلومات ويسألك لو في أي تعارض قبل التفعيل.</p>
+        </div>
+        <div class="agent-status-row">
+          <span id="promptCooldownBadge" class="cooldown-pill">جاهز للتحديث ✅</span>
+          <button id="agentClearBtn" type="button" class="studio-btn" style="padding: 6px 12px; font-size: 0.8rem;">محادثة جديدة</button>
+        </div>
       </div>
 
-      <div class="studio-field">
-        <label for="promptKbInput">قاعدة المعرفة (Alexanders Knowledge Base)</label>
-        <textarea id="promptKbInput" class="studio-textarea" rows="16" dir="auto"></textarea>
+      <div id="agentMessages" class="agent-messages" aria-live="polite"></div>
+
+      <div class="agent-quick-chips" id="agentQuickChips">
+        <button type="button" class="agent-chip" data-prompt="راجع البرومبت الحالي ولخص لي أهم المعلومات الموجودة فيه">🔍 لخّص المعلومات الحالية</button>
+        <button type="button" class="agent-chip" data-prompt="عايز أضيف إيفنت أو ورشة جديدة للكيان">➕ إضافة فعالية جديدة</button>
+        <button type="button" class="agent-chip" data-prompt="عايز أعدّل ميعاد أو لينك التقديم">📅 تعديل ميعاد أو لينك</button>
+        <button type="button" class="agent-chip" data-prompt="عايز أعدّل أسلوب ردود المساعد الذكي">🎨 تعديل أسلوب الرد</button>
       </div>
 
-      <div id="promptSaveError" class="studio-error" hidden></div>
-      <div id="promptSaveResult" class="studio-pr-result" hidden></div>
-
-      <div class="studio-modal-actions">
-        <button id="reloadPromptBtn" type="button" class="studio-btn">↻ إعادة تحميل النسخة الحالية</button>
-        <button id="savePromptBtn" type="button" class="studio-btn studio-btn--primary">💾 حفظ وتفعيل مباشر (بدون PR)</button>
-      </div>
+      <form id="agentChatForm" class="agent-composer">
+        <textarea
+          id="agentChatInput"
+          class="agent-input"
+          rows="2"
+          dir="auto"
+          placeholder="مثال: أضف إن في ورشة ذكاء اصطناعي يوم الجمعة الجاية مجاناً، أو غيّر ميعاد التقديم..."
+          required
+        ></textarea>
+        <button id="agentSendBtn" type="submit" class="studio-btn studio-btn--primary agent-send-btn">
+          إرسال
+        </button>
+      </form>
     </section>
 
-    <!-- 3. Dedicated FAQ Section (AI Cleanup Pass -> KV Save -> GitHub Actions Frontend Sync) -->
-    <section class="prompt-card" style="margin-top: 24px;">
+    <!-- SECONDARY SECTION: Manual Fine-Tuning (with Post-Edit AI Conflict Review) -->
+    <details id="manualTuningDetails" class="prompt-card manual-details">
+      <summary class="manual-summary">
+        <span>⚙️ التعديل اليدوي الدقيق (Manual Fine-Tuning)</span>
+        <span class="manual-summary-hint">للمتقدمين • يتضمن مراجعة تلقائية بالـ AI للتعارضات</span>
+      </summary>
+
+      <div class="manual-body">
+        <div id="promptMetaInfo" class="prompt-meta"></div>
+
+        <div class="studio-field">
+          <label for="promptInstructionsInput">تعليمات النظام والضوابط (System Prompt & Guardrails)</label>
+          <textarea id="promptInstructionsInput" class="studio-textarea" rows="10" dir="auto"></textarea>
+        </div>
+
+        <div class="studio-field">
+          <label for="promptKbInput">قاعدة المعرفة (Alexanders Knowledge Base)</label>
+          <textarea id="promptKbInput" class="studio-textarea" rows="16" dir="auto"></textarea>
+        </div>
+
+        <!-- AI Conflict Review Warning Box (shown if manual edit has conflicts) -->
+        <div id="manualReviewWarning" class="review-warning-box" hidden>
+          <h3>⚠️ مراجعة الذكاء الاصطناعي رصدت ملاحظات أو تعارضات محتملة</h3>
+          <p id="manualReviewSummary"></p>
+          <div id="manualReviewConflicts" class="agent-conflict-list"></div>
+          <div class="review-actions">
+            <button id="resolveWithAgentBtn" type="button" class="studio-btn studio-btn--primary">
+              🤖 حل التعارضات مع المساعد الذكي بالأعلى
+            </button>
+            <button id="forceSavePromptBtn" type="button" class="studio-btn">
+              ✅ تأكيد الحفظ رغم الملاحظات
+            </button>
+          </div>
+        </div>
+
+        <div id="promptSaveError" class="studio-error" hidden></div>
+        <div id="promptSaveResult" class="studio-pr-result" hidden></div>
+
+        <div class="studio-modal-actions">
+          <button id="reloadPromptBtn" type="button" class="studio-btn">↻ إعادة تحميل النسخة الحالية</button>
+          <button id="savePromptBtn" type="button" class="studio-btn studio-btn--primary">🔍 مراجعة بالـ AI وحفظ التعديل اليدوي</button>
+        </div>
+      </div>
+    </details>
+
+    <!-- TERTIARY SECTION: Dedicated FAQ Editor -->
+    <section class="prompt-card" style="margin-top: 22px;">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
         <div>
-          <h2 style="font-size:1.2rem;font-weight:800;color:var(--studio-accent);margin-bottom:4px;">💬 إدارة الأسئلة الشائعة (FAQ)</h2>
-          <p style="font-size:0.84rem;color:var(--studio-muted);">
+          <h2 style="font-size:1.15rem;font-weight:800;color:var(--studio-accent);margin:0 0 4px;">💬 إدارة الأسئلة الشائعة (FAQ)</h2>
+          <p style="font-size:0.84rem;color:var(--studio-muted);margin:0;">
             عند الحفظ، يمر كل سؤال وإجابة بمرحلة مراجعة وتنظيف سريعة بالذكاء الاصطناعي (AI Cleanup Pass)، ثم يُحفظ في الخادم ويشغّل تلقائياً الـ Workflow لتحديث الواجهة الأمامية.
           </p>
         </div>
