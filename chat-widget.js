@@ -18,6 +18,8 @@
         : DEFAULT_WORKER_ORIGIN;
 
   const CHAT_ENDPOINT = `${API_BASE}/api/chat`;
+  const CHAT_CONTEXT_ENDPOINT = `${API_BASE}/api/chat/context`;
+  const CHAT_LOG_ENDPOINT = `${API_BASE}/api/chat/log`;
   const FAQS_ENDPOINT = `${API_BASE}/api/faqs`;
   const QUOTA_ENDPOINT = `${API_BASE}/api/quota`;
   const LINK_ENDPOINT = `${API_BASE}/api/auth/link`;
@@ -895,8 +897,140 @@
   }
 
   // ============================================================================
-  // 4B. Free-Text AI Pipeline ({ message, history, sessionId })
-  // Strictly used for manually typed messages (even if identical to an FAQ).
+  // 4B. Client-Side Puter AI Overflow & Server-Fallback Engine
+  // Only used when:
+  //   (a) The 5-messages/minute server quota is exceeded, OR
+  //   (b) The Cloudflare Worker / Workers AI is having a hard time (5xx / offline).
+  // Fetches ONLY 1–2 minimal relevant public fact snippets from /api/chat/context
+  // (never the full system prompt or full Knowledge Base).
+  // ============================================================================
+  function isClientPuterAiReady() {
+    return Boolean(
+      typeof window !== "undefined" &&
+        window.puter &&
+        window.puter.ai &&
+        typeof window.puter.ai.chat === "function"
+    );
+  }
+
+  function extractClientPuterReply(res) {
+    if (!res) return "";
+    if (typeof res === "string") return res.trim();
+    const content =
+      res?.message?.content ??
+      res?.choices?.[0]?.message?.content ??
+      res?.text ??
+      res?.result?.message?.content ??
+      "";
+    if (Array.isArray(content)) {
+      return content
+        .map((p) => (typeof p === "string" ? p : p?.text || ""))
+        .join("")
+        .trim();
+    }
+    return typeof content === "string" ? content.trim() : "";
+  }
+
+  function buildLocalFaqFallbackContext(userText) {
+    const words = String(userText || "")
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((w) => w.length >= 2);
+    const scored = faqCatalog
+      .filter((f) => f && f.question && f.answer)
+      .map((f) => {
+        const hay = `${f.question} ${f.answer}`.toLowerCase();
+        let score = 0;
+        for (const w of words) {
+          if (hay.includes(w)) score++;
+        }
+        return { f, score };
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 2);
+
+    return scored
+      .map((item) => `س: ${item.f.question}\nج: ${item.f.answer}`)
+      .join("\n\n")
+      .slice(0, 1200);
+  }
+
+  async function runClientSidePuterChat(userText) {
+    if (!isClientPuterAiReady()) {
+      throw new Error("CLIENT_PUTER_UNAVAILABLE");
+    }
+
+    let personaHint =
+      "You are the helpful assistant for Alexanders Group (كيان ألكساندرز - جامعة الإسكندرية). Answer concisely in the user's language using only the provided facts.";
+    let contextSnippet = "";
+
+    // 1. Try to fetch ONLY 1–2 minimal relevant public snippets from Worker (never full prompt)
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 5000);
+      const ctxRes = await fetch(CHAT_CONTEXT_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ message: userText }),
+        signal: ctrl.signal,
+      });
+      clearTimeout(timer);
+      if (ctxRes.ok) {
+        const ctxData = await ctxRes.json().catch(() => ({}));
+        if (ctxData?.personaHint) personaHint = ctxData.personaHint;
+        if (ctxData?.contextSnippet) contextSnippet = ctxData.contextSnippet;
+      }
+    } catch {
+      // Worker unreachable -> fall back to top 2 matching local public FAQ items
+    }
+
+    if (!contextSnippet) {
+      contextSnippet = buildLocalFaqFallbackContext(userText);
+    }
+
+    const clientMessages = [
+      {
+        role: "system",
+        content: contextSnippet
+          ? `${personaHint}\n\nRelevant facts:\n${contextSnippet}`
+          : personaHint,
+      },
+      ...conversationHistory.slice(-6),
+      { role: "user", content: userText },
+    ];
+
+    const puterResp = await window.puter.ai.chat(clientMessages);
+    const reply = extractClientPuterReply(puterResp);
+    if (!reply) {
+      throw new Error("EMPTY_CLIENT_PUTER_REPLY");
+    }
+
+    // Best-effort background log to Worker (never blocks reply)
+    try {
+      const headers = { "Content-Type": "application/json" };
+      const tok = await getPuterAuthToken();
+      if (tok) headers.Authorization = `Bearer ${tok}`;
+      fetch(CHAT_LOG_ENDPOINT, {
+        method: "POST",
+        credentials: "include",
+        headers,
+        body: JSON.stringify({
+          sessionId,
+          userMessage: userText,
+          assistantResponse: reply,
+        }),
+      }).catch(() => {});
+    } catch {
+      // ignore logging failures
+    }
+
+    return reply;
+  }
+
+  // ============================================================================
+  // 4C. Free-Text AI Pipeline ({ message, history, sessionId })
+  // First 5 msgs/min run on Cloudflare Workers AI (full hidden prompt).
+  // Overflow (>5 msgs/min) or server issues seamlessly hand off to client-side Puter.
   // ============================================================================
   async function sendMessage(rawText) {
     const userText = (rawText || "").trim();
@@ -910,6 +1044,21 @@
     setBusy(true);
 
     const assistantNode = appendMessage("assistant", "", { isTyping: true });
+
+    const renderFinalReply = async (replyText) => {
+      const finalReply = String(replyText || "").trim();
+      const finalDir = detectDirection(finalReply);
+      assistantNode.msgEl.setAttribute("dir", finalDir);
+      assistantNode.bodyEl.setAttribute("dir", finalDir);
+      assistantNode.bodyEl.innerHTML = renderMarkdown(finalReply);
+
+      conversationHistory.push({ role: "user", content: userText });
+      conversationHistory.push({ role: "assistant", content: finalReply });
+      if (conversationHistory.length > MAX_HISTORY_MESSAGES) {
+        conversationHistory = conversationHistory.slice(-MAX_HISTORY_MESSAGES);
+      }
+      await refreshAuthUI();
+    };
 
     try {
       const headers = {
@@ -933,14 +1082,22 @@
         sessionId,
       };
 
-      const response = await fetch(CHAT_ENDPOINT, {
-        method: "POST",
-        credentials: "include",
-        headers,
-        body: JSON.stringify(payload),
-      });
+      let response = null;
+      let data = {};
+      let serverFailed = false;
 
-      const data = await response.json().catch(() => ({}));
+      try {
+        response = await fetch(CHAT_ENDPOINT, {
+          method: "POST",
+          credentials: "include",
+          headers,
+          body: JSON.stringify(payload),
+        });
+        data = await response.json().catch(() => ({}));
+      } catch {
+        serverFailed = true;
+      }
+
       if (activeNonce !== sessionNonce) return;
 
       if (data?.sessionId) {
@@ -961,48 +1118,44 @@
         }
       }
 
-      // Handle 403 / 401 AUTH_REQUIRED (5-message guest limit reached or expired Puter token)
-      if (
+      const quotaExceeded =
+        response &&
         (response.status === 403 || response.status === 401) &&
-        data?.error === "AUTH_REQUIRED"
-      ) {
-        if (response.status === 401) {
-          clearCachedPuterToken();
-          currentUserProfile = null;
+        (data?.useClientPuter ||
+          data?.error === "QUOTA_EXCEEDED_USE_PUTER" ||
+          data?.error === "AUTH_REQUIRED");
+      const serverHavingHardTime =
+        serverFailed || !response || response.status >= 500 || !response.ok || !data?.reply;
+
+      // Overflow (>5 msgs/min) OR server having a hard time -> hand off to client-side Puter!
+      if (quotaExceeded || serverHavingHardTime) {
+        if (isUserSignedIn() && isClientPuterAiReady()) {
+          const clientReply = await runClientSidePuterChat(userText);
+          if (activeNonce !== sessionNonce) return;
+          await renderFinalReply(clientReply);
+          return;
         }
+
+        // Not signed into Puter yet -> offer one-tap Puter sign-in to continue immediately client-side
         pendingMessage = userText;
         assistantNode?.msgEl.remove();
         await refreshAuthUI();
         showAuthPrompt(
-          "وصلت لحد الـ 5 رسائل المتتالية كزائر. انتظر دقيقة واحدة ليتم تجديد 5 رسائل جديدة تلقائياً، أو سجّل الدخول عبر Puter للمتابعة فوراً بلا حدود."
+          quotaExceeded
+            ? "وصلت لحد الـ 5 رسائل في الدقيقة على الخادم. انتظر دقيقة واحدة للتجديد التلقائي، أو سجّل الدخول عبر Puter للمتابعة فوراً من جهازك."
+            : "الخادم مشغول حالياً — يمكنك تسجيل الدخول عبر Puter مجاناً للمتابعة فوراً من جهازك."
         );
         return;
       }
 
-      if (!response.ok || !data?.reply) {
-        throw new Error(data?.message || `HTTP ${response.status}`);
-      }
-
-      const finalReply = String(data.reply).trim();
-      const finalDir = detectDirection(finalReply);
-      assistantNode.msgEl.setAttribute("dir", finalDir);
-      assistantNode.bodyEl.setAttribute("dir", finalDir);
-      assistantNode.bodyEl.innerHTML = renderMarkdown(finalReply);
-
-      conversationHistory.push({ role: "user", content: userText });
-      conversationHistory.push({ role: "assistant", content: finalReply });
-      if (conversationHistory.length > MAX_HISTORY_MESSAGES) {
-        conversationHistory = conversationHistory.slice(-MAX_HISTORY_MESSAGES);
-      }
-
-      await refreshAuthUI();
+      await renderFinalReply(data.reply);
     } catch (err) {
       if (activeNonce !== sessionNonce) return;
 
       const msg =
         err?.message && /limit|auth|تسجيل/i.test(err.message)
           ? err.message
-          : `حدث خطأ أثناء الاتصال بخادم المحادثة. تأكد من تشغيل Cloudflare Worker أو تواصل معنا عبر [our_facebook](${FB_URL})`;
+          : `حدث خطأ أثناء الاتصال بخادم المحادثة. يمكنك المحاولة مرة أخرى أو التواصل معنا عبر [our_facebook](${FB_URL})`;
       assistantNode.msgEl.classList.add("alex-chat-msg--error");
       const errDir = detectDirection(msg);
       assistantNode.msgEl.setAttribute("dir", errDir);
