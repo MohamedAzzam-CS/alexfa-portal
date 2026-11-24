@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Alexanders Events Admin | لوحة إدارة الفعاليات</title>
+  <link rel="icon" href="../favicon.webp" type="image/webp">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="studio.css">
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+    html, body {
+      overflow-x: hidden;
+      overflow-y: auto;
+      -webkit-text-size-adjust: 100%;
+      touch-action: manipulation;
+    }
+    .events-admin-shell {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: max(20px, env(safe-area-inset-top)) 16px calc(56px + env(safe-area-inset-bottom));
+    }
+    .events-admin-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--studio-border);
+    }
+    .events-admin-header h1 {
+      font-size: clamp(1.2rem, 3.6vw, 1.48rem);
+      font-weight: 800;
+      color: var(--studio-accent);
+      margin: 0 0 4px;
+    }
+    .events-admin-sub {
+      font-size: 0.84rem;
+      color: var(--studio-muted);
+      margin: 0;
+    }
+    .header-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .admin-card {
+      background: var(--studio-surface);
+      border: 1px solid var(--studio-border);
+      border-radius: 18px;
+      padding: 20px;
+      box-shadow: 0 18px 46px rgba(0, 0, 0, 0.42);
+      margin-bottom: 22px;
+    }
+    .admin-card h2 {
+      font-size: 1.12rem;
+      font-weight: 800;
+      color: var(--studio-accent);
+      margin: 0 0 14px;
+    }
+    .form-grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .image-upload-box {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--studio-border);
+    }
+    .image-preview-thumb {
+      width: 190px;
+      aspect-ratio: 16 / 9;
+      border-radius: 10px;
+      object-fit: cover;
+      background: #0f172a;
+      border: 1px solid var(--studio-border);
+      flex-shrink: 0;
+    }
+    .image-upload-controls {
+      flex: 1;
+      min-width: 220px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .image-btn-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .filter-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .filter-pills {
+      display: inline-flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .filter-pill {
+      padding: 8px 16px;
+      border-radius: 999px;
+      border: 1px solid var(--studio-border);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--studio-text);
+      font-family: inherit;
+      font-size: 0.86rem;
+      font-weight: 700;
+      cursor: pointer;
+      min-height: 40px;
+    }
+    .filter-pill.is-active {
+      background: var(--studio-accent);
+      border-color: var(--studio-accent);
+      color: #0b1120;
+    }
+
+    .admin-events-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    .admin-event-item {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--studio-border);
+      border-radius: 14px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .admin-event-item img {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      display: block;
+      background: #0f172a;
+    }
+    .admin-event-body {
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex: 1;
+    }
+    .admin-event-body h3 {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 800;
+      color: var(--studio-text);
+    }
+    .admin-event-meta {
+      font-size: 0.82rem;
+      color: var(--studio-muted);
+    }
+    .admin-event-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: auto;
+      padding-top: 10px;
+    }
+    .admin-event-actions .studio-btn {
+      flex: 1;
+      min-height: 38px;
+      font-size: 0.82rem;
+    }
+
+    .empty-admin-note {
+      text-align: center;
+      padding: 28px 16px;
+      border-radius: 14px;
+      border: 1px dashed var(--studio-border);
+      color: var(--studio-muted);
+      font-size: 0.92rem;
+    }
+
+    @media (max-width: 680px) {
+      .form-grid-2 {
+        grid-template-columns: 1fr;
+      }
+      .studio-input,
+      .studio-textarea,
+      .studio-select {
+        font-size: 16px !important;
+      }
+      .studio-btn {
+        min-height: 44px;
+      }
+      .image-preview-thumb {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 1. Admin Login Gate -->
+  <div id="eventsLoginOverlay" class="studio-login-overlay">
+    <div class="studio-login-card">
+      <span class="studio-login-badge">Alexanders Events Admin</span>
+      <h1>لوحة إدارة الفعاليات</h1>
+      <p>سجّل الدخول لإضافة أو تعديل أو حذف الفعاليات ورفع صورها. جميع المواعيد تُحسب بتوقيت مصر (Africa/Cairo).</p>
+      <div id="eventsLoginError" class="studio-error" hidden></div>
+      <form id="eventsLoginForm">
+        <div class="studio-field">
+          <label for="eventsAdminName">الاسم</label>
+          <input id="eventsAdminName" class="studio-input" type="text" placeholder="مثال: مسؤول التنظيم" autocomplete="name" required>
+        </div>
+        <div class="studio-field">
+          <label for="eventsAdminPassword">كلمة مرور الإدارة</label>
+          <input id="eventsAdminPassword" class="studio-input" type="password" placeholder="••••••••" autocomplete="current-password" required>
+        </div>
+        <button id="eventsLoginSubmitBtn" type="submit" class="studio-btn studio-btn--primary studio-btn--full">
+          دخول إلى لوحة الفعاليات
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- 2. Events CRUD Dashboard (Zero AI helper) -->
+  <main id="eventsApp" class="events-admin-shell" hidden>
+    <header class="events-admin-header">
+      <div>
+        <h1>📅 لوحة إدارة فعاليات ألكساندرز</h1>
+        <p id="egyptNowMeta" class="events-admin-sub">🇪🇬 جميع المواعيد بتوقيت مصر (Africa/Cairo)</p>
+      </div>
+      <div class="header-actions">
+        <a href="../events.html" target="_blank" rel="noopener noreferrer" class="studio-btn">👁️ معاينة صفحة الفعاليات</a>
+        <button id="eventsLogoutBtn" type="button" class="studio-btn studio-btn--danger">تسجيل خروج</button>
+      </div>
+    </header>
+
+    <!-- Add / Edit Event Form -->
+    <section class="admin-card">
+      <h2 id="eventFormTitle">➕ إضافة فعالية جديدة</h2>
+      <form id="eventForm">
+        <input type="hidden" id="eventIdInput" value="">
+
+        <div class="form-grid-2">
+          <div class="studio-field">
+            <label for="eventTitleInput">اسم الفعالية *</label>
+            <input id="eventTitleInput" class="studio-input" type="text" placeholder="مثال: ورشة الذكاء الاصطناعي" required>
+          </div>
+          <div class="studio-field">
+            <label for="eventCategoryInput">التصنيف</label>
+            <select id="eventCategoryInput" class="studio-select">
+              <option value="فعالية">فعالية</option>
+              <option value="ورشة عمل">ورشة عمل</option>
+              <option value="كورس">كورس</option>
+              <option value="سيشن">سيشن</option>
+              <option value="رحلة">رحلة</option>
+              <option value="مبادرة">مبادرة</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="studio-field">
+            <label for="eventDateInput">التاريخ (بتوقيت مصر) *</label>
+            <input id="eventDateInput" class="studio-input" type="date" required>
+          </div>
+          <div class="studio-field">
+            <label for="eventTimeInput">الوقت (بتوقيت مصر - القاهرة) *</label>
+            <input id="eventTimeInput" class="studio-input" type="time" value="17:00" required>
+          </div>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="studio-field">
+            <label for="eventLocationInput">المكان</label>
+            <input id="eventLocationInput" class="studio-input" type="text" placeholder="مثال: مكتبة الإسكندرية / أونلاين">
+          </div>
+          <div class="studio-field">
+            <label for="eventRegUrlInput">رابط التسجيل (اختياري)</label>
+            <input id="eventRegUrlInput" class="studio-input" type="url" dir="ltr" placeholder="https://docs.google.com/forms/...">
+          </div>
+        </div>
+
+        <div class="studio-field">
+          <label for="eventDescInput">وصف الفعالية</label>
+          <textarea id="eventDescInput" class="studio-textarea" rows="3" placeholder="اكتب تفاصيل مختصرة عن الفعالية..."></textarea>
+        </div>
+
+        <div class="studio-field">
+          <label>صورة الفعالية (تُستخدم الصورة الافتراضية تلقائياً إذا تُركت فارغة)</label>
+          <div class="image-upload-box">
+            <img id="eventImagePreview" class="image-preview-thumb" src="../assets/event-placeholder.svg" alt="معاينة الصورة">
+            <div class="image-upload-controls">
+              <input id="eventImageFileInput" type="file" accept="image/*" hidden>
+              <div class="image-btn-row">
+                <button id="uploadImageBtn" type="button" class="studio-btn">📷 رفع صورة من الجهاز</button>
+                <button id="resetImageBtn" type="button" class="studio-btn">↺ استخدام الصورة الافتراضية</button>
+              </div>
+              <input id="eventImageUrlInput" class="studio-input" type="text" dir="ltr" placeholder="أو الصق رابط صورة مباشر (اختياري)">
+            </div>
+          </div>
+        </div>
+
+        <div id="eventFormError" class="studio-error" hidden></div>
+        <div id="eventFormSuccess" class="studio-pr-result" hidden></div>
+
+        <div class="studio-modal-actions">
+          <button id="cancelEditBtn" type="button" class="studio-btn" hidden>إلغاء التعديل</button>
+          <button id="saveEventBtn" type="submit" class="studio-btn studio-btn--primary">💾 حفظ الفعالية</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Events List (Upcoming / Passed) -->
+    <section class="admin-card">
+      <div class="filter-bar">
+        <h2 style="margin:0;">📋 قائمة الفعاليات</h2>
+        <div class="filter-pills">
+          <button type="button" id="adminFilterUpcoming" class="filter-pill is-active" data-filter="upcoming">
+            الفعاليات القادمة (<span id="adminUpcomingCount">0</span>)
+          </button>
+          <button type="button" id="adminFilterPassed" class="filter-pill" data-filter="passed">
+            الفعاليات السابقة (<span id="adminPassedCount">0</span>)
+          </button>
+        </div>
+      </div>
+
+      <div id="adminEventsContainer"></div>
+    </section>
+  </main>
+
+  <script type="module" src="events.js"></script>
+</body>
+</html>

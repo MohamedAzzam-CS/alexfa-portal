@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675" role="img" aria-label="Alexanders Event Placeholder">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="50%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#172554"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="45%" r="55%">
+      <stop offset="0%" stop-color="#ffd166" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#ffd166" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="675" fill="url(#bg)"/>
+  <rect width="1200" height="675" fill="url(#glow)"/>
+  <rect x="44" y="44" width="1112" height="587" rx="28" fill="none" stroke="#ffd166" stroke-opacity="0.22" stroke-width="2" stroke-dasharray="10 10"/>
+  <g transform="translate(600 285)" text-anchor="middle" font-family="Cairo, Poppins, sans-serif">
+    <circle cx="0" cy="-42" r="46" fill="#ffd166" fill-opacity="0.14" stroke="#ffd166" stroke-opacity="0.55" stroke-width="2"/>
+    <text x="0" y="-27" font-size="40" fill="#ffd166">✦</text>
+    <text x="0" y="42" font-size="38" font-weight="800" fill="#f8fafc" letter-spacing="4">ALEXANDERS</text>
+    <text x="0" y="88" font-size="24" font-weight="600" fill="#cbd5e1">فعاليات كيان ألكساندرز • Events</text>
+    <text x="0" y="130" font-size="18" fill="#94a3b8">سيتم إضافة صورة الفعالية قريباً</text>
+  </g>
+</svg>
