@@ -453,11 +453,11 @@ function configureComponentGuardrails(component) {
     toolbar.push(
       {
         attributes: { class: "fa fa-clone", title: "تكرار العنصر (Duplicate)" },
-        command: "tlb-clone",
+        command: "smart-clone",
       },
       {
         attributes: { class: "fa fa-trash-o", title: "حذف العنصر (Delete)" },
-        command: "tlb-delete",
+        command: "smart-delete",
       }
     );
   }
@@ -480,6 +480,63 @@ function syncPictureSourceOnImageSwap(imgComponent) {
       }
     });
   }
+}
+
+const IMAGE_WRAPPER_CARD_CLASSES = [
+  "event-card",
+  "gallery-item",
+  "gallery-card",
+  "photo-card",
+  "image-card",
+  "media-card",
+  "carousel-item",
+  "slide",
+];
+
+/**
+ * When duplicating or deleting an <img>, never duplicate/leave a bare <img> inside <picture>.
+ * Promotes to <picture>, and if <picture>/<img> is the sole media child of a card wrapper
+ * (like .event-card), promotes to that card so duplicating creates two distinct grid items!
+ */
+function resolveSmartImageActionTarget(component) {
+  if (!component) return null;
+  let target = component;
+  const tag = String(target.get("tagName") || "").toLowerCase();
+
+  if (tag === "img") {
+    const parent = target.parent();
+    if (parent && String(parent.get("tagName") || "").toLowerCase() === "picture") {
+      target = parent;
+    }
+  }
+
+  const targetTag = String(target.get("tagName") || "").toLowerCase();
+  if (targetTag === "img" || targetTag === "picture") {
+    const container = target.parent();
+    if (container) {
+      const cTag = String(container.get("tagName") || "").toLowerCase();
+      const cClasses = container.getClasses ? container.getClasses() : [];
+      const isProtected =
+        cTag === "body" ||
+        cTag === "section" ||
+        cTag === "nav" ||
+        cTag === "footer" ||
+        cClasses.some((cls) => NON_DUPLICABLE_CLASSES.includes(cls));
+
+      if (!isProtected) {
+        const isNamedImageCard = cClasses.some((cls) => IMAGE_WRAPPER_CARD_CLASSES.includes(cls));
+        const elementChildren = container.components().filter((child) => {
+          const t = String(child.get("tagName") || "").toLowerCase();
+          return Boolean(t);
+        });
+        if (isNamedImageCard || (elementChildren.length === 1 && (cTag === "div" || cTag === "figure"))) {
+          target = container;
+        }
+      }
+    }
+  }
+
+  return target;
 }
 
 function initGrapesEditor() {
@@ -583,6 +640,35 @@ function initGrapesEditor() {
     pageDrafts.set(currentPageFile, existing);
     updatePendingBadge();
   };
+
+  editor.Commands.add("smart-clone", {
+    run(ed) {
+      const selected = ed.getSelected();
+      if (!selected) return;
+      const target = resolveSmartImageActionTarget(selected);
+      const parent = target?.parent();
+      if (!target || !parent) return;
+      const idx = target.index();
+      const cloned = target.clone();
+      parent.append(cloned, { at: idx + 1 });
+      configureComponentGuardrails(cloned);
+      // Select the newly cloned image (if any) so the user can swap it immediately
+      const clonedImg = cloned.find ? cloned.find("img")[0] : null;
+      ed.select(clonedImg || cloned);
+      markCurrentPageDirty();
+    },
+  });
+
+  editor.Commands.add("smart-delete", {
+    run(ed) {
+      const selected = ed.getSelected();
+      if (!selected) return;
+      const target = resolveSmartImageActionTarget(selected);
+      if (!target) return;
+      target.remove();
+      markCurrentPageDirty();
+    },
+  });
 
   editor.on("component:update", markCurrentPageDirty);
   editor.on("component:clone", (cloned) => {
