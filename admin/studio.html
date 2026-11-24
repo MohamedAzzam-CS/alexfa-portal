@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="robots" content="noindex, nofollow">
   <title>Alexanders Visual Studio | المحرر المرئي</title>
   <link rel="icon" href="../favicon.webp" type="image/webp">
@@ -11,6 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Poppins:wght@600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/grapesjs@0.21.13/dist/css/grapes.min.css">
   <link rel="stylesheet" href="studio.css">
+  <script src="https://js.puter.com/v2/"></script>
 </head>
 <body>
 
@@ -19,7 +20,7 @@
     <div class="studio-login-card">
       <span class="studio-login-badge">Alexanders CMS Studio</span>
       <h1>تسجيل دخول المحررين</h1>
-      <p>سجّل الدخول بكلمة مرور المحررين لتعديل النصوص والصور والألوان وإرسال طلب مراجعة (Pull Request).</p>
+      <p>سجّل الدخول بكلمة مرور المحررين لتعديل النصوص والصور والخطوط والألوان أو استخدام المصمم الذكي وإرسال طلب مراجعة (Pull Request).</p>
       <div id="loginError" class="studio-error" hidden></div>
       <form id="studioLoginForm">
         <div class="studio-field">
@@ -37,7 +38,7 @@
     </div>
   </div>
 
-  <!-- 2. Focused 4-Capability Visual Editor Workspace -->
+  <!-- 2. Focused Visual Editor + Puter AI Designer Workspace -->
   <div id="studioApp" class="studio-app" hidden>
     <header class="studio-topbar">
       <div class="studio-topbar-group">
@@ -46,7 +47,6 @@
           <option value="index.html">الرئيسية (index.html)</option>
           <option value="about.html">من نحن (about.html)</option>
           <option value="story.html">قصتنا (story.html)</option>
-          <option value="honor.html">لوحة الشرف (honor.html)</option>
           <option value="committees.html">اللجان (committees.html)</option>
           <option value="gallery.html">المعرض (gallery.html)</option>
           <option value="join.html">انضم إلينا (join.html)</option>
@@ -59,7 +59,8 @@
         <button id="canvasThemeToggleBtn" type="button" class="studio-btn" title="تبديل الوضع الليلي / النهاري">🌙 الوضع الليلي</button>
         <button id="undoBtn" type="button" class="studio-btn" title="تراجع">↩️ تراجع</button>
         <button id="redoBtn" type="button" class="studio-btn" title="إعادة">↪️ إعادة</button>
-        <button id="themePanelBtn" type="button" class="studio-btn">🎨 الألوان والتدرجات</button>
+        <button id="styleDrawerBtn" type="button" class="studio-btn">🖌️ الخطوط والألوان</button>
+        <button id="aiDrawerBtn" type="button" class="studio-btn studio-btn--ai">✨ المصمم الذكي (AI)</button>
       </div>
 
       <div class="studio-topbar-group">
@@ -71,39 +72,177 @@
 
     <div class="studio-hint-bar">
       <span><strong>تعديل نص:</strong> اضغط مرتين على أي نص</span>
-      <span><strong>تغيير صورة:</strong> اضغط على أي صورة لرفع بديل</span>
-      <span><strong>تكرار أو حذف:</strong> حدد أي بطاقة/قسم واستخدم شريط الأدوات</span>
-      <span><strong>الألوان والتدرجات:</strong> افتح زر 🎨</span>
+      <span><strong>تغيير صورة:</strong> اضغط على أي صورة</span>
+      <span><strong>خطوط وألوان:</strong> حدد أي عنصر وافتح 🖌️</span>
+      <span><strong>تعديل بالذكاء الاصطناعي:</strong> افتح ✨ (معاينة قبل فتح PR)</span>
     </div>
 
     <div class="studio-workspace">
       <div id="gjs"></div>
 
-      <!-- Theme Colors & Gradients Drawer (css/variables.css) -->
+      <!-- Drawer A: Easy Element Font & Color Picker + Global Theme Colors -->
       <aside id="themeDrawer" class="studio-drawer" hidden>
         <div class="studio-drawer-header">
-          <h2>ألوان وتدرجات الموقع</h2>
+          <h2>الخطوط والألوان</h2>
           <button id="closeThemeDrawerBtn" type="button" class="studio-btn">✕</button>
         </div>
+
         <div class="studio-theme-tabs">
-          <button id="tabDarkTheme" type="button" class="studio-btn is-active">🌙 الوضع الليلي</button>
-          <button id="tabLightTheme" type="button" class="studio-btn">☀️ الوضع النهاري</button>
+          <button id="tabElementStyle" type="button" class="studio-btn is-active">🎯 العنصر المحدد</button>
+          <button id="tabSiteTheme" type="button" class="studio-btn">🎨 ألوان الموقع</button>
         </div>
-        <div id="themeTokensContainer" class="studio-drawer-body"></div>
+
+        <!-- Panel 1: Selected Element Font & Color Picker (This Element vs All) -->
+        <div id="elementStylePanel" class="studio-drawer-body">
+          <div id="selectedElementBadge" class="studio-selected-badge">
+            اضغط على أي عنصر في الصفحة لتعديل خطه أو ألوانه بسهولة
+          </div>
+
+          <div class="studio-scope-box">
+            <label class="studio-scope-label">نطاق التعديل:</label>
+            <div class="studio-scope-toggle">
+              <button type="button" id="scopeSingleBtn" class="studio-btn is-active">هذا العنصر فقط</button>
+              <button type="button" id="scopeAllBtn" class="studio-btn">تطبيق على الكل</button>
+            </div>
+            <div id="scopeHintText" class="studio-scope-hint">التغييرات ستُطبق على العنصر المحدد فقط.</div>
+          </div>
+
+          <div class="studio-token-group-title">🔤 مكتبة الخطوط (عربي وإنجليزي)</div>
+          <div class="studio-field">
+            <input id="fontSearchInput" class="studio-input" type="text" placeholder="ابحث عن خط... (مثال: Cairo, Tajawal, Poppins)">
+          </div>
+          <div class="studio-field">
+            <select id="fontFamilySelect" class="studio-select" size="6" style="height: 165px;"></select>
+          </div>
+          <div class="studio-token-row">
+            <label for="fontWeightSelect">سمك الخط</label>
+            <select id="fontWeightSelect" class="studio-select" style="width: 140px;">
+              <option value="">افتراضي</option>
+              <option value="400">عادي (400)</option>
+              <option value="500">متوسط (500)</option>
+              <option value="600">نصف عريض (600)</option>
+              <option value="700">عريض (700)</option>
+              <option value="800">عريض جداً (800)</option>
+              <option value="900">ثقيل (900)</option>
+            </select>
+          </div>
+
+          <div class="studio-token-group-title">🎨 ألوان العنصر</div>
+          <div class="studio-token-row">
+            <label for="elTextColorPicker">لون النص</label>
+            <div class="studio-color-pair">
+              <input id="elTextColorPicker" type="color" class="studio-color-input" value="#ffffff">
+              <button type="button" id="clearTextColorBtn" class="studio-btn studio-btn--mini" title="إعادة للافتراضي">↺</button>
+            </div>
+          </div>
+          <div class="studio-token-row">
+            <label for="elBgColorPicker">لون الخلفية</label>
+            <div class="studio-color-pair">
+              <input id="elBgColorPicker" type="color" class="studio-color-input" value="#0f172a">
+              <button type="button" id="clearBgColorBtn" class="studio-btn studio-btn--mini" title="إعادة للافتراضي">↺</button>
+            </div>
+          </div>
+          <div class="studio-token-row">
+            <label for="elBorderColorPicker">لون الإطار</label>
+            <div class="studio-color-pair">
+              <input id="elBorderColorPicker" type="color" class="studio-color-input" value="#ffd166">
+              <button type="button" id="clearBorderColorBtn" class="studio-btn studio-btn--mini" title="إعادة للافتراضي">↺</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Panel 2: Global Theme Variables (css/variables.css) -->
+        <div id="siteThemePanel" class="studio-drawer-body" hidden>
+          <div class="studio-theme-tabs" style="padding: 0 0 12px; border: none;">
+            <button id="tabDarkTheme" type="button" class="studio-btn is-active">🌙 الوضع الليلي</button>
+            <button id="tabLightTheme" type="button" class="studio-btn">☀️ الوضع النهاري</button>
+          </div>
+          <div id="themeTokensContainer"></div>
+        </div>
+      </aside>
+
+      <!-- Drawer B: Conservative Puter AI Designer (Incremental Changes + Preview before PR) -->
+      <aside id="aiDrawer" class="studio-drawer studio-ai-drawer" hidden>
+        <div class="studio-drawer-header">
+          <h2>✨ المصمم الذكي (Puter AI)</h2>
+          <button id="closeAiDrawerBtn" type="button" class="studio-btn">✕</button>
+        </div>
+
+        <div id="studioPuterBar" class="studio-puter-bar">
+          <span id="studioPuterStatus">سجّل الدخول بحساب Puter لتشغيل المصمم الذكي</span>
+          <button id="studioPuterSignInBtn" type="button" class="studio-btn studio-btn--primary" style="padding: 6px 12px;">
+            دخول Puter
+          </button>
+        </div>
+
+        <div id="aiChatMessages" class="studio-ai-messages" aria-live="polite"></div>
+
+        <form id="aiChatForm" class="studio-ai-composer">
+          <textarea
+            id="aiChatInput"
+            class="studio-textarea"
+            rows="2"
+            dir="auto"
+            placeholder="اطلب أي تعديل تدريجي على الصفحة الحالية... (محمي: الشات والفعاليات والمساهمون)"
+            required
+          ></textarea>
+          <button id="aiChatSendBtn" type="submit" class="studio-btn studio-btn--primary studio-btn--full">
+            ✨ إرسال للمصمم الذكي
+          </button>
+        </form>
       </aside>
     </div>
   </div>
 
-  <!-- 3. Modal: Submit Single PR -->
+  <!-- 3. Modal: AI Change Preview & Explicit PR Confirmation -->
+  <div id="aiPreviewModal" class="studio-modal-backdrop" hidden>
+    <div class="studio-modal studio-preview-modal">
+      <div class="studio-preview-header">
+        <div>
+          <h3 style="margin: 0 0 4px;">👁️ معاينة التعديلات المقترحة قبل فتح Pull Request</h3>
+          <p id="aiPreviewSummary" style="margin: 0; font-size: 0.84rem; color: var(--studio-muted);"></p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button type="button" id="aiPreviewDesktopBtn" class="studio-btn is-active">🖥️ كمبيوتر</button>
+          <button type="button" id="aiPreviewMobileBtn" class="studio-btn">📱 موبايل</button>
+          <button type="button" id="closeAiPreviewBtn" class="studio-btn">✕</button>
+        </div>
+      </div>
+
+      <div id="aiPreviewDiffList" class="studio-preview-diffs"></div>
+
+      <div class="studio-preview-frame-wrap">
+        <iframe id="aiPreviewFrame" class="studio-preview-frame" sandbox="allow-same-origin" title="معاينة الصفحة المعدّلة"></iframe>
+      </div>
+
+      <label class="studio-preview-confirm-check">
+        <input type="checkbox" id="aiPreviewConfirmCheckbox">
+        <span>راجعت المعاينة المباشرة للتعديلات وأؤكد رغبتي في فتح Pull Request بهذه التغييرات على الكود.</span>
+      </label>
+
+      <div id="aiPreviewError" class="studio-error" hidden></div>
+      <div id="aiPreviewResult" class="studio-pr-result" hidden></div>
+
+      <div class="studio-modal-actions">
+        <button type="button" id="aiCancelPreviewBtn" class="studio-btn">❌ إلغاء</button>
+        <button type="button" id="aiApplyCanvasOnlyBtn" class="studio-btn">📥 تطبيق في المحرر فقط</button>
+        <button type="button" id="aiConfirmOpenPrBtn" class="studio-btn studio-btn--primary" disabled>
+          ✅ تأكيد وفتح Pull Request
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Modal: Submit Manual Changes PR -->
   <div id="submitPrModal" class="studio-modal-backdrop" hidden>
     <div class="studio-modal">
       <h3>إرسال التعديلات للمراجعة (Pull Request)</h3>
       <p style="font-size: 0.84rem; color: var(--studio-muted); margin-bottom: 12px;">
-        سيتم إنشاء فرع جديد وطلب دمج واحد (Pull Request) يحتوي على جميع الصفحات المعدّلة، الألوان، والصور المرفوعة لموافقتك النهائية.
+        سيتم إنشاء فرع جديد وطلب دمج واحد (Pull Request) يحتوي على جميع الصفحات المعدّلة، الخطوط، الألوان، والصور المرفوعة لموافقتك النهائية.
       </p>
       <div class="studio-field">
         <label for="prSummaryInput">وصف مختصر للتعديلات</label>
-        <input id="prSummaryInput" class="studio-input" type="text" placeholder="مثال: تحديث نصوص وصور صفحة قصتنا وتعديل ألوان الثيم">
+        <input id="prSummaryInput" class="studio-input" type="text" placeholder="مثال: تحديث نصوص وصور وخطوط الصفحة الرئيسية">
       </div>
       <div id="prFileList" style="font-size: 0.82rem; color: var(--studio-muted); margin-bottom: 10px;"></div>
       <div id="prError" class="studio-error" hidden></div>

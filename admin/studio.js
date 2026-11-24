@@ -11,16 +11,52 @@ const API_BASE =
       ? ""
       : DEFAULT_WORKER_ORIGIN;
 
+// Editable static pages (honor.html and events.html are strictly protected)
 const SITE_PAGES = [
   "index.html",
   "about.html",
   "story.html",
-  "honor.html",
   "committees.html",
   "gallery.html",
   "join.html",
   "privacy.html",
   "terms.html",
+];
+
+const PROTECTED_PAGES = new Set(["events.html", "honor.html"]);
+
+// Huge curated library of Arabic & English Google Fonts
+const GOOGLE_FONTS_LIBRARY = [
+  // Arabic-first modern & display fonts
+  { name: "Cairo", label: "Cairo (كايرو - عربي وإنجليزي)" },
+  { name: "Tajawal", label: "Tajawal (تجوال - عربي حديث)" },
+  { name: "Almarai", label: "Almarai (المراعي - واضح وأنيق)" },
+  { name: "IBM Plex Sans Arabic", label: "IBM Plex Sans Arabic (تقني احترافي)" },
+  { name: "Readex Pro", label: "Readex Pro (ريدكس - عصري)" },
+  { name: "Alexandria", label: "Alexandria (الإسكندرية - هندسي)" },
+  { name: "Changa", label: "Changa (تشانجا - عريض ومميز)" },
+  { name: "Noto Kufi Arabic", label: "Noto Kufi Arabic (كوفي هندسي)" },
+  { name: "Rubik", label: "Rubik (روبيك - ناعم وحديث)" },
+  { name: "El Messiri", label: "El Messiri (المسيري - كلاسيكي أنيق)" },
+  { name: "Amiri", label: "Amiri (الأميري - تقليدي فخم)" },
+  { name: "Vazirmatn", label: "Vazirmatn (وزير - قراءة مريحة)" },
+  { name: "Lalezar", label: "Lalezar (لالزار - عناوين ضخمة)" },
+  { name: "Marhey", label: "Marhey (مرحي - إبداعي ومرح)" },
+  { name: "Aref Ruqaa", label: "Aref Ruqaa (عارف رقعة - خط رقعة)" },
+  { name: "Reem Kufi", label: "Reem Kufi (ريم كوفي - فني)" },
+  { name: "Harmattan", label: "Harmattan (هارماتان - بسيط)" },
+  { name: "Mada", label: "Mada (مدى - خفيف)" },
+  // English / Latin display & UI fonts
+  { name: "Poppins", label: "Poppins (English Modern)" },
+  { name: "Montserrat", label: "Montserrat (English Geometric)" },
+  { name: "Inter", label: "Inter (English Clean UI)" },
+  { name: "Plus Jakarta Sans", label: "Plus Jakarta Sans (Startup UI)" },
+  { name: "Outfit", label: "Outfit (Modern Headings)" },
+  { name: "Space Grotesk", label: "Space Grotesk (Tech Display)" },
+  { name: "Playfair Display", label: "Playfair Display (Luxury Serif)" },
+  { name: "Raleway", label: "Raleway (Elegant Sans)" },
+  { name: "Oswald", label: "Oswald (Bold Condensed)" },
+  { name: "Merriweather", label: "Merriweather (Editorial Serif)" },
 ];
 
 const PAGE_EXTRA_CSS = {
@@ -120,6 +156,12 @@ let sharedChromeDirty = false;
 
 const pageDrafts = new Map(); // filename -> { title, extraCss, bodyHtml, scopedCss, dirty }
 const uploadedAssets = new Map(); // "assets/pc/name.ext" -> { base64, dataUrl }
+const usedGoogleFonts = new Set(); // extra Google Font family names used in edits
+
+let styleApplyScope = "single"; // "single" | "all"
+let aiChatHistory = [];
+let aiBusy = false;
+let pendingAiPreview = null; // { pageFile, summary, changes, updatedBodyHtml, updatedScopedCss, fullPreviewHtml }
 
 // DOM refs
 const el = {
@@ -136,15 +178,63 @@ const el = {
   canvasThemeToggleBtn: document.getElementById("canvasThemeToggleBtn"),
   undoBtn: document.getElementById("undoBtn"),
   redoBtn: document.getElementById("redoBtn"),
-  themePanelBtn: document.getElementById("themePanelBtn"),
+  styleDrawerBtn: document.getElementById("styleDrawerBtn"),
+  aiDrawerBtn: document.getElementById("aiDrawerBtn"),
   pendingBadge: document.getElementById("pendingBadge"),
   submitPrBtn: document.getElementById("submitPrBtn"),
   logoutBtn: document.getElementById("logoutBtn"),
+
+  // Drawer A: Element Style & Site Theme
   themeDrawer: document.getElementById("themeDrawer"),
   closeThemeDrawerBtn: document.getElementById("closeThemeDrawerBtn"),
+  tabElementStyle: document.getElementById("tabElementStyle"),
+  tabSiteTheme: document.getElementById("tabSiteTheme"),
+  elementStylePanel: document.getElementById("elementStylePanel"),
+  siteThemePanel: document.getElementById("siteThemePanel"),
+  selectedElementBadge: document.getElementById("selectedElementBadge"),
+  scopeSingleBtn: document.getElementById("scopeSingleBtn"),
+  scopeAllBtn: document.getElementById("scopeAllBtn"),
+  scopeHintText: document.getElementById("scopeHintText"),
+  fontSearchInput: document.getElementById("fontSearchInput"),
+  fontFamilySelect: document.getElementById("fontFamilySelect"),
+  fontWeightSelect: document.getElementById("fontWeightSelect"),
+  elTextColorPicker: document.getElementById("elTextColorPicker"),
+  elBgColorPicker: document.getElementById("elBgColorPicker"),
+  elBorderColorPicker: document.getElementById("elBorderColorPicker"),
+  clearTextColorBtn: document.getElementById("clearTextColorBtn"),
+  clearBgColorBtn: document.getElementById("clearBgColorBtn"),
+  clearBorderColorBtn: document.getElementById("clearBorderColorBtn"),
   tabDarkTheme: document.getElementById("tabDarkTheme"),
   tabLightTheme: document.getElementById("tabLightTheme"),
   themeTokensContainer: document.getElementById("themeTokensContainer"),
+
+  // Drawer B: Conservative Puter AI Designer
+  aiDrawer: document.getElementById("aiDrawer"),
+  closeAiDrawerBtn: document.getElementById("closeAiDrawerBtn"),
+  studioPuterBar: document.getElementById("studioPuterBar"),
+  studioPuterStatus: document.getElementById("studioPuterStatus"),
+  studioPuterSignInBtn: document.getElementById("studioPuterSignInBtn"),
+  aiChatMessages: document.getElementById("aiChatMessages"),
+  aiChatForm: document.getElementById("aiChatForm"),
+  aiChatInput: document.getElementById("aiChatInput"),
+  aiChatSendBtn: document.getElementById("aiChatSendBtn"),
+
+  // AI Preview & Confirmation Modal
+  aiPreviewModal: document.getElementById("aiPreviewModal"),
+  aiPreviewSummary: document.getElementById("aiPreviewSummary"),
+  aiPreviewDesktopBtn: document.getElementById("aiPreviewDesktopBtn"),
+  aiPreviewMobileBtn: document.getElementById("aiPreviewMobileBtn"),
+  closeAiPreviewBtn: document.getElementById("closeAiPreviewBtn"),
+  aiPreviewDiffList: document.getElementById("aiPreviewDiffList"),
+  aiPreviewFrame: document.getElementById("aiPreviewFrame"),
+  aiPreviewConfirmCheckbox: document.getElementById("aiPreviewConfirmCheckbox"),
+  aiPreviewError: document.getElementById("aiPreviewError"),
+  aiPreviewResult: document.getElementById("aiPreviewResult"),
+  aiCancelPreviewBtn: document.getElementById("aiCancelPreviewBtn"),
+  aiApplyCanvasOnlyBtn: document.getElementById("aiApplyCanvasOnlyBtn"),
+  aiConfirmOpenPrBtn: document.getElementById("aiConfirmOpenPrBtn"),
+
+  // Manual PR Modal
   submitPrModal: document.getElementById("submitPrModal"),
   prSummaryInput: document.getElementById("prSummaryInput"),
   prFileList: document.getElementById("prFileList"),
@@ -268,6 +358,14 @@ function buildHtmlDocument({ filename, title, extraCss = [], bodyHtml, scopedCss
   // Ensure each page's active navbar link matches its own filename
   const syncedBody = applySharedChromeToBody(bodyHtml, filename);
 
+  const extraFontLinks = Array.from(usedGoogleFonts)
+    .filter((f) => f && f !== "Cairo" && f !== "Poppins")
+    .map(
+      (f) =>
+        `  <link href="https://fonts.googleapis.com/css2?family=${encodeURIComponent(f).replace(/%20/g, "+")}:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">`
+    )
+    .join("\n");
+
   return `<!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="dark">
 <head>
@@ -277,7 +375,7 @@ function buildHtmlDocument({ filename, title, extraCss = [], bodyHtml, scopedCss
   <link rel="icon" href="favicon.webp" type="image/webp">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Poppins:wght@600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Poppins:wght@600;700;800;900&display=swap" rel="stylesheet">${extraFontLinks ? "\n" + extraFontLinks : ""}
   <link rel="stylesheet" href="css/variables.css">
   <link rel="stylesheet" href="css/style.css">${extraCssLinks ? "\n" + extraCssLinks : ""}${scopedStyleBlock}
 </head>
@@ -604,7 +702,10 @@ function initGrapesEditor() {
   });
 
   editor.on("component:add", (comp) => configureComponentGuardrails(comp));
-  editor.on("component:selected", (comp) => configureComponentGuardrails(comp));
+  editor.on("component:selected", (comp) => {
+    configureComponentGuardrails(comp);
+    syncElementStyleInspector(comp);
+  });
 
   editor.on("component:update:src", (comp) => {
     syncPictureSourceOnImageSwap(comp);
@@ -1041,6 +1142,547 @@ async function submitPullRequest() {
 }
 
 // ============================================================================
+// 6B. Element Font Library (28 Google Fonts) & Smart Color Picker (Single vs All)
+// ============================================================================
+function rgbToHex(rgbStr) {
+  if (!rgbStr) return null;
+  if (/^#[0-9a-f]{6}$/i.test(rgbStr.trim())) return rgbStr.trim();
+  const m = String(rgbStr).match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+  if (!m) return null;
+  const toHex = (n) => Number(n).toString(16).padStart(2, "0");
+  return `#${toHex(m[1])}${toHex(m[2])}${toHex(m[3])}`;
+}
+
+function loadGoogleFontIntoCanvas(fontName) {
+  if (!fontName) return;
+  usedGoogleFonts.add(fontName);
+  const href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(fontName).replace(/%20/g, "+")}:wght@400;500;600;700;800;900&display=swap`;
+  const id = `gfont_${fontName.replace(/[^a-zA-Z0-9]/g, "_")}`;
+
+  // Load into parent studio doc (for font dropdown preview)
+  if (!document.getElementById(id)) {
+    const link = document.createElement("link");
+    link.id = id;
+    link.rel = "stylesheet";
+    link.href = href;
+    document.head.appendChild(link);
+  }
+  // Load into GrapesJS canvas iframe
+  const frameDoc = editor?.Canvas?.getDocument?.();
+  if (frameDoc && !frameDoc.getElementById(id)) {
+    const link = frameDoc.createElement("link");
+    link.id = id;
+    link.rel = "stylesheet";
+    link.href = href;
+    frameDoc.head.appendChild(link);
+  }
+}
+
+function renderFontLibraryOptions(filterText = "") {
+  if (!el.fontFamilySelect) return;
+  const q = String(filterText || "").trim().toLowerCase();
+  const prev = el.fontFamilySelect.value;
+  el.fontFamilySelect.innerHTML = "";
+
+  GOOGLE_FONTS_LIBRARY.filter(
+    (f) => !q || f.name.toLowerCase().includes(q) || f.label.toLowerCase().includes(q)
+  ).forEach((f) => {
+    const opt = document.createElement("option");
+    opt.value = f.name;
+    opt.textContent = f.label;
+    opt.style.fontFamily = `"${f.name}", sans-serif`;
+    el.fontFamilySelect.appendChild(opt);
+  });
+
+  if (prev) el.fontFamilySelect.value = prev;
+}
+
+function getSelectedTargetsForScope(selected) {
+  if (!selected) return [];
+  if (styleApplyScope === "single") return [selected];
+
+  const wrapper = editor?.getWrapper?.();
+  if (!wrapper) return [selected];
+
+  const classes = (selected.getClasses ? selected.getClasses() : []).filter(
+    (c) => c && !c.startsWith("gjs-") && c !== "visible" && c !== "fade-in" && c !== "active"
+  );
+  const tag = String(selected.get("tagName") || "").toLowerCase();
+
+  if (classes.length > 0) {
+    const matches = wrapper.find(`.${classes[0]}`);
+    if (matches && matches.length > 0) return matches;
+  }
+  if (tag) {
+    const matches = wrapper.find(tag);
+    if (matches && matches.length > 0) return matches;
+  }
+  return [selected];
+}
+
+function syncElementStyleInspector(comp) {
+  if (!el.selectedElementBadge) return;
+  if (!comp) {
+    el.selectedElementBadge.textContent = "اضغط على أي عنصر في الصفحة لتعديل خطه أو ألوانه بسهولة";
+    return;
+  }
+
+  const tag = String(comp.get("tagName") || "element").toLowerCase();
+  const classes = (comp.getClasses ? comp.getClasses() : []).filter(
+    (c) => c && !c.startsWith("gjs-") && c !== "visible"
+  );
+  const label = classes.length > 0 ? `<${tag}.${classes[0]}>` : `<${tag}>`;
+  const allCount = getSelectedTargetsForScope(comp).length;
+  el.selectedElementBadge.textContent =
+    styleApplyScope === "all"
+      ? `العنصر المحدد: ${label} — سيتم التطبيق على (${allCount}) عناصر مشابهة`
+      : `العنصر المحدد: ${label} (تعديل هذا العنصر فقط)`;
+
+  const viewEl = comp.getEl ? comp.getEl() : null;
+  const win = editor?.Canvas?.getWindow?.();
+  if (viewEl && win) {
+    const cs = win.getComputedStyle(viewEl);
+    const hexColor = rgbToHex(cs.color);
+    const hexBg = rgbToHex(cs.backgroundColor);
+    const hexBorder = rgbToHex(cs.borderColor);
+    if (hexColor && el.elTextColorPicker) el.elTextColorPicker.value = hexColor;
+    if (hexBg && cs.backgroundColor !== "rgba(0, 0, 0, 0)" && el.elBgColorPicker) {
+      el.elBgColorPicker.value = hexBg;
+    }
+    if (hexBorder && el.elBorderColorPicker) el.elBorderColorPicker.value = hexBorder;
+    if (el.fontWeightSelect && cs.fontWeight) {
+      el.fontWeightSelect.value = cs.fontWeight;
+    }
+  }
+}
+
+function applyStyleToSelection(styleObj) {
+  const selected = editor?.getSelected?.();
+  if (!selected) {
+    alert("اختر عنصراً من الصفحة أولاً بالضغط عليه.");
+    return;
+  }
+  const targets = getSelectedTargetsForScope(selected);
+  targets.forEach((comp) => {
+    comp.addStyle(styleObj);
+  });
+  // Trigger dirty tracking
+  const normalized = normalizeExportedHtml(editor.getHtml());
+  const existing = pageDrafts.get(currentPageFile) || {
+    title: `Alexanders | ${currentPageFile}`,
+    extraCss: PAGE_EXTRA_CSS[currentPageFile] || [],
+  };
+  existing.bodyHtml = normalized;
+  existing.scopedCss = editor.getCss({ avoidProtected: true }) || "";
+  existing.dirty = true;
+  pageDrafts.set(currentPageFile, existing);
+  updatePendingBadge();
+}
+
+function setStyleScope(scope) {
+  styleApplyScope = scope === "all" ? "all" : "single";
+  el.scopeSingleBtn?.classList.toggle("is-active", styleApplyScope === "single");
+  el.scopeAllBtn?.classList.toggle("is-active", styleApplyScope === "all");
+  if (el.scopeHintText) {
+    el.scopeHintText.textContent =
+      styleApplyScope === "all"
+        ? "التغييرات ستُطبق على جميع العناصر المشابهة في الصفحة (نفس الفئة أو النوع)."
+        : "التغييرات ستُطبق على العنصر المحدد فقط.";
+  }
+  syncElementStyleInspector(editor?.getSelected?.());
+}
+
+// ============================================================================
+// 6C. Conservative Puter AI Designer (Incremental Changes + Live Preview -> PR)
+// ============================================================================
+const STUDIO_PROPOSAL_START = "<<<STUDIO_PROPOSAL>>>";
+const STUDIO_PROPOSAL_END = "<<<END_STUDIO_PROPOSAL>>>";
+
+function isStudioPuterSignedIn() {
+  try {
+    return Boolean(
+      typeof window !== "undefined" &&
+        window.puter &&
+        window.puter.auth &&
+        typeof window.puter.auth.isSignedIn === "function" &&
+        window.puter.auth.isSignedIn()
+    );
+  } catch {
+    return false;
+  }
+}
+
+function refreshStudioPuterBar() {
+  if (!el.studioPuterBar || !el.studioPuterStatus || !el.studioPuterSignInBtn) return;
+  if (isStudioPuterSignedIn()) {
+    el.studioPuterBar.classList.add("is-connected");
+    el.studioPuterStatus.textContent = "✅ متصل بحساب Puter AI";
+    el.studioPuterSignInBtn.textContent = "متصل";
+    el.studioPuterSignInBtn.disabled = true;
+  } else {
+    el.studioPuterBar.classList.remove("is-connected");
+    el.studioPuterStatus.textContent = "سجّل الدخول بحساب Puter لتشغيل المصمم الذكي";
+    el.studioPuterSignInBtn.textContent = "دخول Puter";
+    el.studioPuterSignInBtn.disabled = false;
+  }
+}
+
+function triggerStudioPuterSignIn() {
+  if (!window.puter?.auth?.signIn) {
+    appendStudioAiMsg("assistant", "تعذر تحميل Puter.js. تأكد من اتصالك بالإنترنت.", { isError: true });
+    return;
+  }
+  el.studioPuterSignInBtn.disabled = true;
+  el.studioPuterSignInBtn.textContent = "جاري الاتصال...";
+  Promise.resolve(window.puter.auth.signIn())
+    .then(() => refreshStudioPuterBar())
+    .catch(() => {
+      refreshStudioPuterBar();
+      appendStudioAiMsg("assistant", "لم يكتمل تسجيل الدخول عبر Puter. اسمح بالنوافذ المنبثقة وحاول مجدداً.", { isError: true });
+    });
+}
+
+function appendStudioAiMsg(role, text, options = {}) {
+  if (!el.aiChatMessages) return null;
+  const bubble = document.createElement("div");
+  bubble.className = `studio-ai-msg studio-ai-msg--${role}`;
+  if (options.isError) bubble.classList.add("studio-ai-msg--error");
+
+  const content = document.createElement("div");
+  content.textContent = text;
+  bubble.appendChild(content);
+
+  if (options.proposal) {
+    const previewBtn = document.createElement("button");
+    previewBtn.type = "button";
+    previewBtn.className = "studio-btn studio-btn--primary studio-ai-preview-trigger";
+    previewBtn.textContent = "👁️ معاينة التعديلات وتأكيد فتح PR";
+    previewBtn.addEventListener("click", () => openAiPreviewModal(options.proposal));
+    bubble.appendChild(previewBtn);
+  }
+
+  el.aiChatMessages.appendChild(bubble);
+  el.aiChatMessages.scrollTop = el.aiChatMessages.scrollHeight;
+  return bubble;
+}
+
+function extractPuterAiText(res) {
+  if (!res) return "";
+  if (typeof res === "string") return res.trim();
+  const content =
+    res?.message?.content ??
+    res?.choices?.[0]?.message?.content ??
+    res?.text ??
+    res?.result?.message?.content ??
+    "";
+  if (Array.isArray(content)) {
+    return content.map((p) => (typeof p === "string" ? p : p?.text || "")).join("").trim();
+  }
+  return typeof content === "string" ? content.trim() : "";
+}
+
+function buildStudioAiSystemPrompt(pageFile, bodyHtml, scopedCss) {
+  return [
+    "You are a CONSERVATIVE Website Designer AI inside Alexanders Visual Studio.",
+    "You make clean, incremental, non-breaking changes to the currently open static HTML page.",
+    "",
+    "STRICT SECURITY & PROTECTION RULES:",
+    "1. NEVER touch, edit, or delete 'events.html' or 'honor.html' — those pages are strictly protected.",
+    "2. NEVER delete or disable the chat widget ('chat-widget.js', 'chat-widget.css', '#alexChatRoot').",
+    "3. CONSERVATIVE & INCREMENTAL ONLY: Never rewrite the whole page. Output ONLY minimal surgical changes (replace / insertAfter / insertBefore / appendCss) so existing layout, classes, and responsive styles remain intact.",
+    "4. Reply in the SAME language the user uses (Arabic or English). Keep replies concise and friendly.",
+    "5. When proposing changes, explain briefly what you changed and append this EXACT proposal block at the end (no markdown code fences):",
+    STUDIO_PROPOSAL_START,
+    `{"summary":"Short summary of changes","page":"${pageFile}","changes":[{"op":"replace","find":"EXACT verbatim substring from CURRENT_BODY_HTML","text":"Replacement HTML"},{"op":"insertAfter","find":"EXACT verbatim anchor","text":"New HTML block"},{"op":"appendCss","text":"/* optional scoped CSS */"}]}`,
+    STUDIO_PROPOSAL_END,
+    "6. Allowed ops: 'replace' (requires exact verbatim 'find' + 'text'), 'insertAfter' (exact 'find' + 'text'), 'insertBefore' (exact 'find' + 'text'), 'appendCss' (CSS string in 'text').",
+    "",
+    `=== CURRENT PAGE: ${pageFile} ===`,
+    "<CURRENT_BODY_HTML>",
+    String(bodyHtml || "").slice(0, 26000),
+    "</CURRENT_BODY_HTML>",
+    "",
+    "<CURRENT_SCOPED_CSS>",
+    String(scopedCss || "").slice(0, 6000),
+    "</CURRENT_SCOPED_CSS>",
+  ].join("\n");
+}
+
+function parseStudioAiProposal(rawReply) {
+  const text = String(rawReply || "");
+  const s = text.indexOf(STUDIO_PROPOSAL_START);
+  const e = text.indexOf(STUDIO_PROPOSAL_END);
+  if (s === -1 || e === -1 || e <= s) {
+    return { cleanText: text.trim(), proposal: null };
+  }
+  const cleanText = [text.slice(0, s).trim(), text.slice(e + STUDIO_PROPOSAL_END.length).trim()]
+    .filter(Boolean)
+    .join("\n\n")
+    .trim();
+  const rawJson = text
+    .slice(s + STUDIO_PROPOSAL_START.length, e)
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
+  try {
+    const parsed = JSON.parse(rawJson);
+    const pageFile = String(parsed?.page || currentPageFile).trim();
+    if (PROTECTED_PAGES.has(pageFile.toLowerCase())) {
+      return {
+        cleanText: "صفحتا الفعاليات (events.html) والمساهمون (honor.html) محميتان ولا يمكن تعديلهما من المحرر.",
+        proposal: null,
+      };
+    }
+    const changes = Array.isArray(parsed?.changes) ? parsed.changes : [];
+    if (changes.length === 0) return { cleanText: cleanText || text.trim(), proposal: null };
+    return {
+      cleanText: cleanText || "جهّزت التعديل التدريجي — اضغط معاينة لمشاهدته قبل فتح PR:",
+      proposal: {
+        pageFile: SITE_PAGES.includes(pageFile) ? pageFile : currentPageFile,
+        summary: String(parsed?.summary || "تعديل تصميم عبر المصمم الذكي").trim(),
+        changes,
+      },
+    };
+  } catch {
+    return { cleanText: cleanText || text.trim(), proposal: null };
+  }
+}
+
+function applyIncrementalStudioChanges(baseBodyHtml, baseScopedCss, changes) {
+  let bodyHtml = String(baseBodyHtml || "");
+  let scopedCss = String(baseScopedCss || "");
+  const applied = [];
+
+  for (const ch of changes) {
+    if (!ch || typeof ch !== "object") continue;
+    const op = String(ch.op || "").trim();
+    const find = typeof ch.find === "string" ? ch.find : "";
+    const text = typeof ch.text === "string" ? ch.text : "";
+
+    if (op === "appendCss" && text.trim()) {
+      scopedCss = `${scopedCss}\n${text.trim()}`.trim();
+      applied.push({ op: "appendCss", label: "🎨 إضافة تنسيق CSS" });
+    } else if (op === "replace" && find) {
+      if (!bodyHtml.includes(find)) {
+        throw new Error(`تعذر مطابقة الجزء المطلوب تعديله بدقة: "${find.slice(0, 60)}"`);
+      }
+      bodyHtml = bodyHtml.replace(find, text);
+      applied.push({ op: "replace", label: `🔄 تعديل جزء من الصفحة` });
+    } else if (op === "insertAfter" && find && text) {
+      if (!bodyHtml.includes(find)) {
+        throw new Error(`تعذر إيجاد موضع الإضافة: "${find.slice(0, 60)}"`);
+      }
+      bodyHtml = bodyHtml.replace(find, `${find}\n${text}`);
+      applied.push({ op: "insertAfter", label: `➕ إضافة عنصر/قسم جديد` });
+    } else if (op === "insertBefore" && find && text) {
+      if (!bodyHtml.includes(find)) {
+        throw new Error(`تعذر إيجاد موضع الإضافة: "${find.slice(0, 60)}"`);
+      }
+      bodyHtml = bodyHtml.replace(find, `${text}\n${find}`);
+      applied.push({ op: "insertBefore", label: `➕ إضافة عنصر/قسم جديد` });
+    }
+  }
+
+  if (applied.length === 0) {
+    throw new Error("لم يتم تطبيق أي تعديل صالح.");
+  }
+
+  return { bodyHtml, scopedCss, applied };
+}
+
+function openAiPreviewModal(proposal) {
+  el.aiPreviewError.hidden = true;
+  el.aiPreviewResult.hidden = true;
+  el.aiPreviewConfirmCheckbox.checked = false;
+  el.aiConfirmOpenPrBtn.disabled = true;
+
+  try {
+    const liveBody = normalizeExportedHtml(editor.getHtml());
+    const liveCss = editor.getCss({ avoidProtected: true }) || "";
+    const draft = pageDrafts.get(proposal.pageFile) || {
+      title: `Alexanders | ${proposal.pageFile}`,
+      extraCss: PAGE_EXTRA_CSS[proposal.pageFile] || [],
+      bodyHtml: liveBody,
+      scopedCss: liveCss,
+    };
+
+    const baseBody = proposal.pageFile === currentPageFile ? liveBody : draft.bodyHtml;
+    const baseCss = proposal.pageFile === currentPageFile ? liveCss : draft.scopedCss;
+
+    const { bodyHtml: updatedBodyHtml, scopedCss: updatedScopedCss, applied } =
+      applyIncrementalStudioChanges(baseBody, baseCss, proposal.changes);
+
+    const fullDocForPr = buildHtmlDocument({
+      filename: proposal.pageFile,
+      title: draft.title,
+      extraCss: draft.extraCss,
+      bodyHtml: updatedBodyHtml,
+      scopedCss: updatedScopedCss,
+    });
+
+    // Render live preview inside iframe using <base href="../"> so relative CSS & assets load cleanly!
+    const previewHtml = fullDocForPr
+      .replace("<head>", '<head>\n  <base href="../">')
+      .replace(/<script[\s\S]*?<\/script>/gi, "");
+
+    pendingAiPreview = {
+      pageFile: proposal.pageFile,
+      title: draft.title,
+      extraCss: draft.extraCss,
+      summary: proposal.summary,
+      applied,
+      updatedBodyHtml,
+      updatedScopedCss,
+      fullDocForPr,
+    };
+
+    el.aiPreviewSummary.textContent = `${proposal.pageFile} — ${proposal.summary}`;
+    el.aiPreviewDiffList.innerHTML = "";
+    applied.forEach((item, idx) => {
+      const pill = document.createElement("span");
+      pill.className = "studio-preview-diff-pill";
+      pill.textContent = `${idx + 1}. ${item.label}`;
+      el.aiPreviewDiffList.appendChild(pill);
+    });
+
+    el.aiPreviewFrame.classList.remove("is-mobile");
+    el.aiPreviewDesktopBtn.classList.add("is-active");
+    el.aiPreviewMobileBtn.classList.remove("is-active");
+    el.aiPreviewFrame.srcdoc = previewHtml;
+    el.aiPreviewModal.hidden = false;
+  } catch (err) {
+    appendStudioAiMsg("assistant", `تعذر تجهيز المعاينة: ${err?.message || "اطلب من المساعد إعادة الصياغة."}`, {
+      isError: true,
+    });
+  }
+}
+
+function applyPendingAiToCanvas() {
+  if (!pendingAiPreview) return;
+  const p = pendingAiPreview;
+  pageDrafts.set(p.pageFile, {
+    title: p.title,
+    extraCss: p.extraCss,
+    bodyHtml: p.updatedBodyHtml,
+    scopedCss: p.updatedScopedCss,
+    dirty: true,
+  });
+
+  if (p.pageFile === currentPageFile) {
+    suppressDirtyTracking = true;
+    const previewBody = p.updatedBodyHtml.replace(/(src|srcset)="assets\//g, '$1="../assets/');
+    editor.setComponents(previewBody);
+    editor.setStyle(p.updatedScopedCss);
+    configureComponentGuardrails(editor.getWrapper());
+    setTimeout(() => {
+      suppressDirtyTracking = false;
+    }, 60);
+  }
+  updatePendingBadge();
+}
+
+async function confirmAndOpenAiPr() {
+  if (!pendingAiPreview || !el.aiPreviewConfirmCheckbox.checked) return;
+  el.aiPreviewError.hidden = true;
+  el.aiPreviewResult.hidden = true;
+  el.aiConfirmOpenPrBtn.disabled = true;
+  el.aiConfirmOpenPrBtn.textContent = "جاري فتح Pull Request...";
+
+  try {
+    const p = pendingAiPreview;
+    applyPendingAiToCanvas();
+
+    const res = await fetch(`${API_BASE}/api/cms/submit`, {
+      method: "POST",
+      credentials: "include",
+      headers: getStudioAuthHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        summary: `[AI Studio] ${p.summary}`,
+        files: [{ path: p.pageFile, content: p.fullDocForPr, encoding: "utf-8" }],
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) {
+      clearStudioToken();
+      el.aiPreviewModal.hidden = true;
+      el.studioApp.hidden = true;
+      el.loginOverlay.hidden = false;
+      return;
+    }
+    if (!res.ok || !data?.ok) {
+      throw new Error(data?.message || `HTTP ${res.status}`);
+    }
+
+    const d = pageDrafts.get(p.pageFile);
+    if (d) d.dirty = false;
+    updatePendingBadge();
+
+    el.aiPreviewResult.innerHTML = `✅ تم فتح طلب المراجعة بنجاح (PR #${data.prNumber})!<br><a href="${escapeHtml(data.prUrl)}" target="_blank" rel="noopener noreferrer">افتح الـ Pull Request على GitHub للموافقة النهائية ←</a>`;
+    el.aiPreviewResult.hidden = false;
+    appendStudioAiMsg("assistant", `✅ تم فتح Pull Request #${data.prNumber} للتعديلات بنجاح!`);
+  } catch (err) {
+    el.aiPreviewError.textContent = err?.message || "فشل فتح Pull Request.";
+    el.aiPreviewError.hidden = false;
+  } finally {
+    el.aiConfirmOpenPrBtn.disabled = !el.aiPreviewConfirmCheckbox.checked;
+    el.aiConfirmOpenPrBtn.textContent = "✅ تأكيد وفتح Pull Request";
+  }
+}
+
+async function sendStudioAiMessage(rawText) {
+  const userText = String(rawText || "").trim();
+  if (!userText || aiBusy) return;
+
+  if (!window.puter?.ai?.chat || !isStudioPuterSignedIn()) {
+    appendStudioAiMsg("assistant", "يرجى الضغط على 'دخول Puter' بالأعلى لتشغيل المصمم الذكي أولاً.", {
+      isError: true,
+    });
+    return;
+  }
+
+  appendStudioAiMsg("user", userText);
+  if (el.aiChatInput) el.aiChatInput.value = "";
+  aiBusy = true;
+  el.aiChatSendBtn.disabled = true;
+  el.aiChatSendBtn.textContent = "جاري تجهيز التعديل...";
+
+  const thinking = appendStudioAiMsg("assistant", "جاري قراءة كود الصفحة وتجهيز تعديل تدريجي آمن...");
+
+  try {
+    const liveBody = normalizeExportedHtml(editor.getHtml());
+    const liveCss = editor.getCss({ avoidProtected: true }) || "";
+    const sysPrompt = buildStudioAiSystemPrompt(currentPageFile, liveBody, liveCss);
+
+    const msgs = [
+      { role: "system", content: sysPrompt },
+      ...aiChatHistory.slice(-8),
+      { role: "user", content: userText },
+    ];
+
+    const puterRes = await window.puter.ai.chat(msgs);
+    const reply = extractPuterAiText(puterRes);
+    if (thinking) thinking.remove();
+    if (!reply) throw new Error("لم يتم استلام رد من Puter AI.");
+
+    const { cleanText, proposal } = parseStudioAiProposal(reply);
+    appendStudioAiMsg("assistant", cleanText, { proposal });
+
+    aiChatHistory.push({ role: "user", content: userText });
+    aiChatHistory.push({ role: "assistant", content: cleanText });
+    if (aiChatHistory.length > 14) aiChatHistory = aiChatHistory.slice(-14);
+  } catch (err) {
+    if (thinking) thinking.remove();
+    appendStudioAiMsg("assistant", `حدث خطأ: ${err?.message || "حاول مرة أخرى."}`, { isError: true });
+  } finally {
+    aiBusy = false;
+    el.aiChatSendBtn.disabled = false;
+    el.aiChatSendBtn.textContent = "✨ إرسال للمصمم الذكي";
+  }
+}
+
+// ============================================================================
 // 7. Bootstrap & Event Wiring
 // ============================================================================
 async function enterStudio() {
@@ -1048,6 +1690,14 @@ async function enterStudio() {
   el.studioApp.hidden = false;
 
   if (!editor) {
+    renderFontLibraryOptions();
+    refreshStudioPuterBar();
+    if (el.aiChatMessages && el.aiChatMessages.children.length === 0) {
+      appendStudioAiMsg(
+        "assistant",
+        "أهلاً بك في المصمم الذكي! ✨\nاطلب أي تعديل تدريجي على الصفحة الحالية (نصوص، أقسام، ألوان، تنسيقات) — هوريك معاينة مباشرة للتعديل قبل ما أفتح Pull Request.\n*(محمي تلقائياً: صندوق الشات، صفحة الفعاليات، وصفحة المساهمين)*."
+      );
+    }
     initGrapesEditor();
     await loadVariablesCss();
     await loadPageIntoCanvas(el.pageSelector.value || "index.html");
@@ -1079,18 +1729,123 @@ function wireEvents() {
   el.undoBtn.addEventListener("click", () => editor?.UndoManager?.undo());
   el.redoBtn.addEventListener("click", () => editor?.UndoManager?.redo());
 
-  el.themePanelBtn.addEventListener("click", () => {
-    el.themeDrawer.hidden = !el.themeDrawer.hidden;
-    el.themePanelBtn.classList.toggle("is-active", !el.themeDrawer.hidden);
+  // Drawer A: Element Style & Site Theme
+  el.styleDrawerBtn.addEventListener("click", () => {
+    const opening = el.themeDrawer.hidden;
+    el.themeDrawer.hidden = !opening;
+    el.styleDrawerBtn.classList.toggle("is-active", opening);
+    if (opening) {
+      el.aiDrawer.hidden = true;
+      el.aiDrawerBtn.classList.remove("is-active");
+      syncElementStyleInspector(editor?.getSelected?.());
+    }
   });
   el.closeThemeDrawerBtn.addEventListener("click", () => {
     el.themeDrawer.hidden = true;
-    el.themePanelBtn.classList.remove("is-active");
+    el.styleDrawerBtn.classList.remove("is-active");
   });
+
+  el.tabElementStyle.addEventListener("click", () => {
+    el.tabElementStyle.classList.add("is-active");
+    el.tabSiteTheme.classList.remove("is-active");
+    el.elementStylePanel.hidden = false;
+    el.siteThemePanel.hidden = true;
+  });
+  el.tabSiteTheme.addEventListener("click", () => {
+    el.tabSiteTheme.classList.add("is-active");
+    el.tabElementStyle.classList.remove("is-active");
+    el.elementStylePanel.hidden = true;
+    el.siteThemePanel.hidden = false;
+  });
+
+  el.scopeSingleBtn.addEventListener("click", () => setStyleScope("single"));
+  el.scopeAllBtn.addEventListener("click", () => setStyleScope("all"));
+
+  el.fontSearchInput.addEventListener("input", () => {
+    renderFontLibraryOptions(el.fontSearchInput.value);
+  });
+  el.fontFamilySelect.addEventListener("change", () => {
+    const fontName = el.fontFamilySelect.value;
+    if (!fontName) return;
+    loadGoogleFontIntoCanvas(fontName);
+    applyStyleToSelection({ "font-family": `"${fontName}", sans-serif` });
+  });
+  el.fontWeightSelect.addEventListener("change", () => {
+    const w = el.fontWeightSelect.value;
+    if (!w) return;
+    applyStyleToSelection({ "font-weight": w });
+  });
+
+  el.elTextColorPicker.addEventListener("input", () => {
+    applyStyleToSelection({ color: el.elTextColorPicker.value });
+  });
+  el.elBgColorPicker.addEventListener("input", () => {
+    applyStyleToSelection({ "background-color": el.elBgColorPicker.value });
+  });
+  el.elBorderColorPicker.addEventListener("input", () => {
+    applyStyleToSelection({ "border-color": el.elBorderColorPicker.value });
+  });
+  el.clearTextColorBtn.addEventListener("click", () => applyStyleToSelection({ color: "" }));
+  el.clearBgColorBtn.addEventListener("click", () => applyStyleToSelection({ "background-color": "" }));
+  el.clearBorderColorBtn.addEventListener("click", () => applyStyleToSelection({ "border-color": "" }));
 
   el.tabDarkTheme.addEventListener("click", () => setCanvasTheme("dark"));
   el.tabLightTheme.addEventListener("click", () => setCanvasTheme("light"));
 
+  // Drawer B: Conservative Puter AI Designer
+  el.aiDrawerBtn.addEventListener("click", () => {
+    const opening = el.aiDrawer.hidden;
+    el.aiDrawer.hidden = !opening;
+    el.aiDrawerBtn.classList.toggle("is-active", opening);
+    if (opening) {
+      el.themeDrawer.hidden = true;
+      el.styleDrawerBtn.classList.remove("is-active");
+      refreshStudioPuterBar();
+    }
+  });
+  el.closeAiDrawerBtn.addEventListener("click", () => {
+    el.aiDrawer.hidden = true;
+    el.aiDrawerBtn.classList.remove("is-active");
+  });
+  el.studioPuterSignInBtn.addEventListener("click", triggerStudioPuterSignIn);
+  el.aiChatForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    sendStudioAiMessage(el.aiChatInput.value);
+  });
+  el.aiChatInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendStudioAiMessage(el.aiChatInput.value);
+    }
+  });
+
+  // AI Preview Modal
+  const closePreview = () => {
+    el.aiPreviewModal.hidden = true;
+  };
+  el.closeAiPreviewBtn.addEventListener("click", closePreview);
+  el.aiCancelPreviewBtn.addEventListener("click", closePreview);
+  el.aiPreviewDesktopBtn.addEventListener("click", () => {
+    el.aiPreviewFrame.classList.remove("is-mobile");
+    el.aiPreviewDesktopBtn.classList.add("is-active");
+    el.aiPreviewMobileBtn.classList.remove("is-active");
+  });
+  el.aiPreviewMobileBtn.addEventListener("click", () => {
+    el.aiPreviewFrame.classList.add("is-mobile");
+    el.aiPreviewMobileBtn.classList.add("is-active");
+    el.aiPreviewDesktopBtn.classList.remove("is-active");
+  });
+  el.aiPreviewConfirmCheckbox.addEventListener("change", () => {
+    el.aiConfirmOpenPrBtn.disabled = !el.aiPreviewConfirmCheckbox.checked;
+  });
+  el.aiApplyCanvasOnlyBtn.addEventListener("click", () => {
+    applyPendingAiToCanvas();
+    el.aiPreviewModal.hidden = true;
+    appendStudioAiMsg("assistant", "📥 تم تطبيق التعديلات داخل المحرر فقط — يمكنك متابعة التعديل وإرسال PR لاحقاً.");
+  });
+  el.aiConfirmOpenPrBtn.addEventListener("click", confirmAndOpenAiPr);
+
+  // Manual PR Modal
   el.submitPrBtn.addEventListener("click", openSubmitPrModal);
   el.cancelPrBtn.addEventListener("click", () => {
     el.submitPrModal.hidden = true;
