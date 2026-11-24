@@ -45,6 +45,8 @@
         <span class="studio-brand">✦ Alexanders Studio</span>
         <select id="pageSelector" class="studio-select studio-page-select" aria-label="اختر الصفحة">
           <option value="index.html">الرئيسية (index.html)</option>
+          <option value="events.html">الفعاليات (events.html)</option>
+          <option value="honor.html">المساهمون (honor.html)</option>
           <option value="about.html">من نحن (about.html)</option>
           <option value="story.html">قصتنا (story.html)</option>
           <option value="committees.html">اللجان (committees.html)</option>
@@ -59,6 +61,7 @@
         <button id="canvasThemeToggleBtn" type="button" class="studio-btn" title="تبديل الوضع الليلي / النهاري">🌙 الوضع الليلي</button>
         <button id="undoBtn" type="button" class="studio-btn" title="تراجع">↩️ تراجع</button>
         <button id="redoBtn" type="button" class="studio-btn" title="إعادة">↪️ إعادة</button>
+        <button id="revertOriginalBtn" type="button" class="studio-btn" title="إلغاء جميع التعديلات والعودة للنسخة الأصلية">↺ العودة للأصل</button>
         <button id="styleDrawerBtn" type="button" class="studio-btn">🖌️ الخطوط والألوان</button>
         <button id="aiDrawerBtn" type="button" class="studio-btn studio-btn--ai">✨ المصمم الذكي (AI)</button>
       </div>
@@ -175,6 +178,11 @@
           </button>
         </div>
 
+        <div class="studio-theme-tabs" style="padding: 8px 12px;">
+          <button type="button" id="aiModeMinimalBtn" class="studio-btn is-active" title="تعديلات خفيفة ومتحفظة تحافظ على التصميم الحالي">🎯 تعديل خفيف (Minimal)</button>
+          <button type="button" id="aiModeDrasticBtn" class="studio-btn" title="إعادة تصميم كاملة وتغييرات جذرية في الصفحة">⚡ تعديل جذري (Drastic)</button>
+        </div>
+
         <div id="aiChatMessages" class="studio-ai-messages" aria-live="polite"></div>
 
         <form id="aiChatForm" class="studio-ai-composer">
@@ -183,7 +191,7 @@
             class="studio-textarea"
             rows="2"
             dir="auto"
-            placeholder="اطلب أي تعديل تدريجي على الصفحة الحالية... (محمي: الشات والفعاليات والمساهمون)"
+            placeholder="اطلب أي تعديل على الصفحة الحالية... (يظهر في معاينة قبل فتح PR)"
             required
           ></textarea>
           <button id="aiChatSendBtn" type="submit" class="studio-btn studio-btn--primary studio-btn--full">

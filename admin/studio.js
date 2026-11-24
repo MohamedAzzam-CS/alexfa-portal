@@ -11,9 +11,10 @@ const API_BASE =
       ? ""
       : DEFAULT_WORKER_ORIGIN;
 
-// Editable static pages (honor.html and events.html are strictly protected)
 const SITE_PAGES = [
   "index.html",
+  "events.html",
+  "honor.html",
   "about.html",
   "story.html",
   "committees.html",
@@ -22,8 +23,6 @@ const SITE_PAGES = [
   "privacy.html",
   "terms.html",
 ];
-
-const PROTECTED_PAGES = new Set(["events.html", "honor.html"]);
 
 // Huge curated library of Arabic & English Google Fonts
 const GOOGLE_FONTS_LIBRARY = [
@@ -159,6 +158,7 @@ const uploadedAssets = new Map(); // "assets/pc/name.ext" -> { base64, dataUrl }
 const usedGoogleFonts = new Set(); // extra Google Font family names used in edits
 
 let styleApplyScope = "single"; // "single" | "all"
+let aiChangeMode = "minimal"; // "minimal" | "drastic"
 let aiChatHistory = [];
 let aiBusy = false;
 let pendingAiPreview = null; // { pageFile, summary, changes, updatedBodyHtml, updatedScopedCss, fullPreviewHtml }
@@ -178,6 +178,7 @@ const el = {
   canvasThemeToggleBtn: document.getElementById("canvasThemeToggleBtn"),
   undoBtn: document.getElementById("undoBtn"),
   redoBtn: document.getElementById("redoBtn"),
+  revertOriginalBtn: document.getElementById("revertOriginalBtn"),
   styleDrawerBtn: document.getElementById("styleDrawerBtn"),
   aiDrawerBtn: document.getElementById("aiDrawerBtn"),
   pendingBadge: document.getElementById("pendingBadge"),
@@ -214,6 +215,8 @@ const el = {
   studioPuterBar: document.getElementById("studioPuterBar"),
   studioPuterStatus: document.getElementById("studioPuterStatus"),
   studioPuterSignInBtn: document.getElementById("studioPuterSignInBtn"),
+  aiModeMinimalBtn: document.getElementById("aiModeMinimalBtn"),
+  aiModeDrasticBtn: document.getElementById("aiModeDrasticBtn"),
   aiChatMessages: document.getElementById("aiChatMessages"),
   aiChatForm: document.getElementById("aiChatForm"),
   aiChatInput: document.getElementById("aiChatInput"),
@@ -999,34 +1002,9 @@ function renderThemeTokensPanel() {
 }
 
 // ============================================================================
-// 6. Single Pull Request Submission (With Site-Wide Navbar/Footer Propagation)
+// 6. Single Pull Request Submission (Only Actually Modified Files)
 // ============================================================================
 async function prepareFilesForPr() {
-  // If .navbar or .footer was edited, fetch all remaining site pages so they receive the update too
-  if (sharedChromeDirty) {
-    for (const filename of SITE_PAGES) {
-      if (!pageDrafts.has(filename)) {
-        try {
-          const res = await fetch(`../${filename}`, { cache: "no-cache" });
-          if (!res.ok) continue;
-          const fullHtml = await res.text();
-          const { title, bodyHtml, scopedCss } = extractEditableBody(fullHtml);
-          pageDrafts.set(filename, {
-            title,
-            extraCss: PAGE_EXTRA_CSS[filename] || [],
-            bodyHtml: normalizeExportedHtml(bodyHtml),
-            scopedCss,
-            dirty: true,
-          });
-        } catch {
-          // ignore unreachable page
-        }
-      } else {
-        pageDrafts.get(filename).dirty = true;
-      }
-    }
-  }
-
   const files = [];
   for (const [filename, draft] of pageDrafts.entries()) {
     if (!draft.dirty) continue;
@@ -1053,12 +1031,8 @@ async function prepareFilesForPr() {
 
 function getPendingCountSync() {
   let count = 0;
-  if (sharedChromeDirty) {
-    count += SITE_PAGES.length;
-  } else {
-    for (const draft of pageDrafts.values()) {
-      if (draft.dirty) count++;
-    }
+  for (const draft of pageDrafts.values()) {
+    if (draft.dirty) count++;
   }
   if (variablesCssDirty) count++;
   count += uploadedAssets.size;
@@ -1067,9 +1041,25 @@ function getPendingCountSync() {
 
 function updatePendingBadge() {
   const count = getPendingCountSync();
-  el.pendingBadge.textContent = sharedChromeDirty
-    ? `${count} ملفات (مزامنة شاملة للـ Navbar/Footer)`
-    : `${count} تعديلات معلقة`;
+  el.pendingBadge.textContent = `${count} تعديلات معلقة`;
+}
+
+async function revertAllToOriginal() {
+  if (!window.confirm("هل أنت متأكد من إلغاء جميع التعديلات والعودة للنسخة الأصلية؟")) {
+    return;
+  }
+  pageDrafts.clear();
+  uploadedAssets.clear();
+  usedGoogleFonts.clear();
+  sharedNavbarHtml = null;
+  sharedFooterHtml = null;
+  sharedChromeDirty = false;
+  variablesCssDirty = false;
+  pendingAiPreview = null;
+
+  await loadVariablesCss();
+  await loadPageIntoCanvas(currentPageFile);
+  updatePendingBadge();
 }
 
 async function openSubmitPrModal() {
@@ -1382,20 +1372,35 @@ function extractPuterAiText(res) {
 }
 
 function buildStudioAiSystemPrompt(pageFile, bodyHtml, scopedCss) {
+  const isDrastic = aiChangeMode === "drastic";
+  const modeInstructions = isDrastic
+    ? [
+        "ACTIVE MODE: DRASTIC REDESIGN MODE (تعديل جذري):",
+        "- The user explicitly wants bold, comprehensive visual or structural redesigns.",
+        "- You may completely redesign sections, layouts, hero areas, typography, colors, or even replace the entire page body using op 'replaceBody' and custom CSS using 'replaceCss' or 'appendCss'.",
+        "- Keep <nav class=\"navbar\"> and <footer class=\"footer\"> functional unless the user asks to change them, and keep Arabic RTL layout crisp and mobile-responsive.",
+      ]
+    : [
+        "ACTIVE MODE: MINIMAL / CONSERVATIVE MODE (تعديل خفيف):",
+        "- Make small, surgical, non-breaking incremental changes ONLY using 'replace', 'insertAfter', 'insertBefore', or 'appendCss'.",
+        "- Preserve all untouched sections, classes, and responsive styles intact.",
+      ];
+
   return [
-    "You are a CONSERVATIVE Website Designer AI inside Alexanders Visual Studio.",
-    "You make clean, incremental, non-breaking changes to the currently open static HTML page.",
+    "You are a skilled Website Designer AI inside Alexanders Visual Studio.",
+    "All changes will be previewed by the user and opened as a GitHub Pull Request for review.",
     "",
-    "STRICT SECURITY & PROTECTION RULES:",
-    "1. NEVER touch, edit, or delete 'events.html' or 'honor.html' — those pages are strictly protected.",
-    "2. NEVER delete or disable the chat widget ('chat-widget.js', 'chat-widget.css', '#alexChatRoot').",
-    "3. CONSERVATIVE & INCREMENTAL ONLY: Never rewrite the whole page. Output ONLY minimal surgical changes (replace / insertAfter / insertBefore / appendCss) so existing layout, classes, and responsive styles remain intact.",
-    "4. Reply in the SAME language the user uses (Arabic or English). Keep replies concise and friendly.",
-    "5. When proposing changes, explain briefly what you changed and append this EXACT proposal block at the end (no markdown code fences):",
+    ...modeInstructions,
+    "",
+    "RULES:",
+    "1. Reply in the SAME language the user uses (Arabic or English). Keep replies concise and friendly.",
+    "2. When proposing changes, explain briefly what you changed and append this EXACT proposal block at the end (no markdown code fences):",
     STUDIO_PROPOSAL_START,
-    `{"summary":"Short summary of changes","page":"${pageFile}","changes":[{"op":"replace","find":"EXACT verbatim substring from CURRENT_BODY_HTML","text":"Replacement HTML"},{"op":"insertAfter","find":"EXACT verbatim anchor","text":"New HTML block"},{"op":"appendCss","text":"/* optional scoped CSS */"}]}`,
+    isDrastic
+      ? `{"summary":"Short summary of drastic redesign","page":"${pageFile}","changes":[{"op":"replaceBody","text":"FULL redesigned HTML inside <body>...</body>"},{"op":"replaceCss","text":"/* full scoped CSS for the redesign */"}]}`
+      : `{"summary":"Short summary of minimal changes","page":"${pageFile}","changes":[{"op":"replace","find":"EXACT verbatim substring from CURRENT_BODY_HTML","text":"Replacement HTML"},{"op":"insertAfter","find":"EXACT verbatim anchor","text":"New HTML block"},{"op":"appendCss","text":"/* optional scoped CSS */"}]}`,
     STUDIO_PROPOSAL_END,
-    "6. Allowed ops: 'replace' (requires exact verbatim 'find' + 'text'), 'insertAfter' (exact 'find' + 'text'), 'insertBefore' (exact 'find' + 'text'), 'appendCss' (CSS string in 'text').",
+    "3. Allowed ops: 'replace' (exact verbatim 'find' + 'text'), 'insertAfter' (exact 'find' + 'text'), 'insertBefore' (exact 'find' + 'text'), 'appendCss' (CSS in 'text'), 'replaceBody' (full body HTML in 'text'), 'replaceCss' (full scoped CSS in 'text').",
     "",
     `=== CURRENT PAGE: ${pageFile} ===`,
     "<CURRENT_BODY_HTML>",
@@ -1429,16 +1434,10 @@ function parseStudioAiProposal(rawReply) {
   try {
     const parsed = JSON.parse(rawJson);
     const pageFile = String(parsed?.page || currentPageFile).trim();
-    if (PROTECTED_PAGES.has(pageFile.toLowerCase())) {
-      return {
-        cleanText: "صفحتا الفعاليات (events.html) والمساهمون (honor.html) محميتان ولا يمكن تعديلهما من المحرر.",
-        proposal: null,
-      };
-    }
     const changes = Array.isArray(parsed?.changes) ? parsed.changes : [];
     if (changes.length === 0) return { cleanText: cleanText || text.trim(), proposal: null };
     return {
-      cleanText: cleanText || "جهّزت التعديل التدريجي — اضغط معاينة لمشاهدته قبل فتح PR:",
+      cleanText: cleanText || "جهّزت التعديل — اضغط معاينة لمشاهدته قبل فتح PR:",
       proposal: {
         pageFile: SITE_PAGES.includes(pageFile) ? pageFile : currentPageFile,
         summary: String(parsed?.summary || "تعديل تصميم عبر المصمم الذكي").trim(),
@@ -1461,7 +1460,13 @@ function applyIncrementalStudioChanges(baseBodyHtml, baseScopedCss, changes) {
     const find = typeof ch.find === "string" ? ch.find : "";
     const text = typeof ch.text === "string" ? ch.text : "";
 
-    if (op === "appendCss" && text.trim()) {
+    if (op === "replaceBody" && text.trim()) {
+      bodyHtml = text.trim();
+      applied.push({ op: "replaceBody", label: "⚡ إعادة تصميم كاملة لمحتوى الصفحة" });
+    } else if (op === "replaceCss" && text.trim()) {
+      scopedCss = text.trim();
+      applied.push({ op: "replaceCss", label: "🎨 تحديث كامل لتنسيق الصفحة (CSS)" });
+    } else if (op === "appendCss" && text.trim()) {
       scopedCss = `${scopedCss}\n${text.trim()}`.trim();
       applied.push({ op: "appendCss", label: "🎨 إضافة تنسيق CSS" });
     } else if (op === "replace" && find) {
@@ -1695,7 +1700,7 @@ async function enterStudio() {
     if (el.aiChatMessages && el.aiChatMessages.children.length === 0) {
       appendStudioAiMsg(
         "assistant",
-        "أهلاً بك في المصمم الذكي! ✨\nاطلب أي تعديل تدريجي على الصفحة الحالية (نصوص، أقسام، ألوان، تنسيقات) — هوريك معاينة مباشرة للتعديل قبل ما أفتح Pull Request.\n*(محمي تلقائياً: صندوق الشات، صفحة الفعاليات، وصفحة المساهمين)*."
+        "أهلاً بك في المصمم الذكي! ✨\nاختر بين (تعديل خفيف) للتغييرات الدقيقة أو (تعديل جذري) لإعادة تصميم كاملة — وهوريك معاينة مباشرة قبل فتح Pull Request."
       );
     }
     initGrapesEditor();
@@ -1728,6 +1733,7 @@ function wireEvents() {
 
   el.undoBtn.addEventListener("click", () => editor?.UndoManager?.undo());
   el.redoBtn.addEventListener("click", () => editor?.UndoManager?.redo());
+  el.revertOriginalBtn.addEventListener("click", revertAllToOriginal);
 
   // Drawer A: Element Style & Site Theme
   el.styleDrawerBtn.addEventListener("click", () => {
@@ -1808,6 +1814,16 @@ function wireEvents() {
     el.aiDrawerBtn.classList.remove("is-active");
   });
   el.studioPuterSignInBtn.addEventListener("click", triggerStudioPuterSignIn);
+  el.aiModeMinimalBtn.addEventListener("click", () => {
+    aiChangeMode = "minimal";
+    el.aiModeMinimalBtn.classList.add("is-active");
+    el.aiModeDrasticBtn.classList.remove("is-active");
+  });
+  el.aiModeDrasticBtn.addEventListener("click", () => {
+    aiChangeMode = "drastic";
+    el.aiModeDrasticBtn.classList.add("is-active");
+    el.aiModeMinimalBtn.classList.remove("is-active");
+  });
   el.aiChatForm.addEventListener("submit", (e) => {
     e.preventDefault();
     sendStudioAiMessage(el.aiChatInput.value);
