@@ -185,6 +185,26 @@
       white-space: pre-wrap;
       word-break: break-word;
     }
+    .proposal-confirm-check {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: rgba(245, 158, 11, 0.1);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      cursor: pointer;
+      font-size: 0.84rem;
+      line-height: 1.5;
+      color: #fef3c7;
+    }
+    .proposal-confirm-check input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      margin-top: 2px;
+      flex-shrink: 0;
+      accent-color: var(--studio-accent);
+    }
     .proposal-actions {
       display: flex;
       gap: 8px;
@@ -194,6 +214,11 @@
       flex: 1;
       min-width: 140px;
       min-height: 44px;
+    }
+    .proposal-actions .studio-btn.is-armed {
+      background: linear-gradient(135deg, #d97706, #b45309);
+      border-color: #f59e0b;
+      color: #ffffff;
     }
     .proposal-status {
       font-size: 0.84rem;
@@ -400,27 +425,6 @@
         <div class="studio-modal-actions">
           <button id="reloadPromptBtn" type="button" class="studio-btn">↻ إعادة تحميل</button>
           <button id="savePromptBtn" type="button" class="studio-btn studio-btn--primary">💾 حفظ مباشر</button>
-        </div>
-      </div>
-    </details>
-
-    <!-- Optional: FAQ Editor -->
-    <details class="prompt-card secondary-details">
-      <summary class="secondary-summary">
-        <span>💬 إدارة الأسئلة الشائعة (FAQ)</span>
-        <span style="font-size: 0.78rem; color: var(--studio-muted);">تتحدث تلقائياً بعد تعديل البرومبت</span>
-      </summary>
-      <div class="secondary-body">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
-          <div id="faqMetaInfo" class="prompt-meta" style="margin:0;"></div>
-          <button id="addFaqBtn" type="button" class="studio-btn">+ إضافة سؤال</button>
-        </div>
-        <div id="faqItemsList" style="display:flex;flex-direction:column;gap:12px;margin-bottom:14px;"></div>
-        <div id="faqSaveError" class="studio-error" hidden></div>
-        <div id="faqSaveResult" class="studio-pr-result" hidden></div>
-        <div class="studio-modal-actions">
-          <button id="reloadFaqsBtn" type="button" class="studio-btn">↻ إعادة تحميل</button>
-          <button id="saveFaqsBtn" type="button" class="studio-btn studio-btn--primary">✨ مراجعة بالـ AI وحفظ</button>
         </div>
       </div>
     </details>

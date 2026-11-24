@@ -49,22 +49,12 @@ const el = {
   saveResult: document.getElementById("promptSaveResult"),
   reloadBtn: document.getElementById("reloadPromptBtn"),
   saveBtn: document.getElementById("savePromptBtn"),
-
-  // Optional FAQ Editor
-  faqMetaInfo: document.getElementById("faqMetaInfo"),
-  faqItemsList: document.getElementById("faqItemsList"),
-  addFaqBtn: document.getElementById("addFaqBtn"),
-  reloadFaqsBtn: document.getElementById("reloadFaqsBtn"),
-  saveFaqsBtn: document.getElementById("saveFaqsBtn"),
-  faqSaveError: document.getElementById("faqSaveError"),
-  faqSaveResult: document.getElementById("faqSaveResult"),
 };
 
 let assistantSystemPrompt = "";
 let currentPromptState = { systemInstructions: "", knowledgeBase: "" };
 let chatHistory = [];
 let chatBusy = false;
-let currentFaqs = [];
 
 // ============================================================================
 // 1. Auth Helpers (Puter + iOS-safe sessionStorage Bearer Token)
@@ -405,6 +395,18 @@ function renderProposalCard(proposal) {
   kbDetails.appendChild(kbBox);
   card.appendChild(kbDetails);
 
+  // Explicit review checkbox required before confirm button is enabled
+  const checkLabel = document.createElement("label");
+  checkLabel.className = "proposal-confirm-check";
+  const checkInput = document.createElement("input");
+  checkInput.type = "checkbox";
+  const checkText = document.createElement("span");
+  checkText.textContent =
+    "راجعت المعاينة النهائية والتواريخ بتوقيت مصر وأؤكد رغبتي في تفعيل هذا التعديل مباشرة على المساعد الذكي.";
+  checkLabel.appendChild(checkInput);
+  checkLabel.appendChild(checkText);
+  card.appendChild(checkLabel);
+
   const actions = document.createElement("div");
   actions.className = "proposal-actions";
 
@@ -412,6 +414,7 @@ function renderProposalCard(proposal) {
   confirmBtn.type = "button";
   confirmBtn.className = "studio-btn studio-btn--primary";
   confirmBtn.textContent = "✅ تأكيد وتفعيل التعديل";
+  confirmBtn.disabled = true;
 
   const cancelBtn = document.createElement("button");
   cancelBtn.type = "button";
@@ -422,7 +425,38 @@ function renderProposalCard(proposal) {
   statusLine.className = "proposal-status";
   statusLine.hidden = true;
 
+  let isArmed = false;
+  let armTimer = null;
+
+  const disarm = () => {
+    isArmed = false;
+    if (armTimer) {
+      clearTimeout(armTimer);
+      armTimer = null;
+    }
+    confirmBtn.classList.remove("is-armed");
+    confirmBtn.textContent = "✅ تأكيد وتفعيل التعديل";
+  };
+
+  checkInput.addEventListener("change", () => {
+    disarm();
+    confirmBtn.disabled = !checkInput.checked;
+  });
+
   confirmBtn.addEventListener("click", async () => {
+    if (!checkInput.checked) return;
+
+    // 2-step click confirmation so admin never publishes by accident
+    if (!isArmed) {
+      isArmed = true;
+      confirmBtn.classList.add("is-armed");
+      confirmBtn.textContent = "⚠️ اضغط مرة أخرى للتأكيد النهائي والنشر";
+      armTimer = setTimeout(disarm, 8000);
+      return;
+    }
+
+    disarm();
+    checkInput.disabled = true;
     confirmBtn.disabled = true;
     cancelBtn.disabled = true;
     confirmBtn.textContent = "جاري الحفظ والتفعيل...";
@@ -432,10 +466,12 @@ function renderProposalCard(proposal) {
         knowledgeBase: proposal.knowledgeBase,
       });
       card.classList.add("is-confirmed");
+      checkLabel.hidden = true;
       actions.hidden = true;
-      statusLine.textContent = "✅ تم حفظ وتفعيل البرومبت الجديد على الخادم، وجاري تحديث الأسئلة الشائعة تلقائياً!";
+      statusLine.textContent = "✅ تم حفظ وتفعيل البرومبت الجديد مباشرة على الخادم!";
       statusLine.hidden = false;
     } catch (err) {
+      checkInput.disabled = false;
       confirmBtn.disabled = false;
       cancelBtn.disabled = false;
       confirmBtn.textContent = "✅ تأكيد وتفعيل التعديل";
@@ -446,7 +482,9 @@ function renderProposalCard(proposal) {
   });
 
   cancelBtn.addEventListener("click", () => {
+    disarm();
     card.classList.add("is-cancelled");
+    checkLabel.hidden = true;
     actions.hidden = true;
     statusLine.style.color = "var(--studio-muted)";
     statusLine.textContent = "تم الإلغاء — اكتب أي تعديل إضافي تريده في المحادثة.";
@@ -556,7 +594,7 @@ async function sendChatMessage(rawText) {
 }
 
 // ============================================================================
-// 4. Optional Manual Save & FAQ Editor
+// 4. Optional Manual Save
 // ============================================================================
 async function handleManualSavePrompt() {
   el.saveError.hidden = true;
@@ -568,7 +606,7 @@ async function handleManualSavePrompt() {
       systemInstructions: el.instructionsInput.value,
       knowledgeBase: el.kbInput.value,
     });
-    el.saveResult.textContent = "✅ تم حفظ البرومبت وتحديث الأسئلة الشائعة تلقائياً.";
+    el.saveResult.textContent = "✅ تم حفظ وتفعيل البرومبت الجديد مباشرة على الخادم.";
     el.saveResult.hidden = false;
   } catch (err) {
     el.saveError.textContent = err?.message || "فشل حفظ البرومبت.";
@@ -576,115 +614,6 @@ async function handleManualSavePrompt() {
   } finally {
     el.saveBtn.disabled = false;
     el.saveBtn.textContent = "💾 حفظ مباشر";
-  }
-}
-
-function renderFaqEditorList() {
-  if (!el.faqItemsList) return;
-  el.faqItemsList.innerHTML = "";
-  currentFaqs.forEach((item, idx) => {
-    const card = document.createElement("div");
-    card.style.cssText =
-      "background:rgba(255,255,255,0.03);border:1px solid var(--studio-border);border-radius:12px;padding:12px;";
-
-    const topRow = document.createElement("div");
-    topRow.style.cssText = "display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;";
-
-    const badge = document.createElement("strong");
-    badge.style.cssText = "font-size:0.84rem;color:var(--studio-accent);";
-    badge.textContent = `سؤال #${idx + 1}`;
-
-    const delBtn = document.createElement("button");
-    delBtn.type = "button";
-    delBtn.className = "studio-btn studio-btn--danger";
-    delBtn.style.padding = "4px 10px";
-    delBtn.textContent = "حذف";
-    delBtn.addEventListener("click", () => {
-      currentFaqs.splice(idx, 1);
-      renderFaqEditorList();
-    });
-
-    topRow.appendChild(badge);
-    topRow.appendChild(delBtn);
-
-    const qInput = document.createElement("input");
-    qInput.type = "text";
-    qInput.className = "studio-input";
-    qInput.dir = "auto";
-    qInput.value = item.question || "";
-    qInput.style.marginBottom = "8px";
-    qInput.addEventListener("input", () => {
-      currentFaqs[idx].question = qInput.value;
-    });
-
-    const aInput = document.createElement("textarea");
-    aInput.className = "studio-textarea";
-    aInput.dir = "auto";
-    aInput.rows = 3;
-    aInput.value = item.answer || "";
-    aInput.addEventListener("input", () => {
-      currentFaqs[idx].answer = aInput.value;
-    });
-
-    card.appendChild(topRow);
-    card.appendChild(qInput);
-    card.appendChild(aInput);
-    el.faqItemsList.appendChild(card);
-  });
-}
-
-async function loadCurrentFaqs() {
-  el.faqSaveError.hidden = true;
-  el.faqSaveResult.hidden = true;
-  try {
-    const res = await fetch(`${API_BASE}/api/cms/faqs`, {
-      method: "GET",
-      credentials: "include",
-      headers: getPromptAuthHeaders(),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.status === 401) {
-      handleUnauthorized();
-      return;
-    }
-    if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
-    currentFaqs = Array.isArray(data.faqs) ? data.faqs.map((f) => ({ ...f })) : [];
-    el.faqMetaInfo.textContent = `عدد الأسئلة: ${currentFaqs.length}`;
-    renderFaqEditorList();
-  } catch (err) {
-    el.faqSaveError.textContent = err?.message || "تعذر تحميل الأسئلة الشائعة.";
-    el.faqSaveError.hidden = false;
-  }
-}
-
-async function handleSaveFaqs() {
-  el.faqSaveError.hidden = true;
-  el.faqSaveResult.hidden = true;
-  el.saveFaqsBtn.disabled = true;
-  el.saveFaqsBtn.textContent = "✨ جاري المراجعة والحفظ...";
-  try {
-    const res = await fetch(`${API_BASE}/api/cms/faqs`, {
-      method: "POST",
-      credentials: "include",
-      headers: getPromptAuthHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ faqs: currentFaqs }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.status === 401) {
-      handleUnauthorized();
-      return;
-    }
-    if (!res.ok || !data?.ok) throw new Error(data?.message || `HTTP ${res.status}`);
-    currentFaqs = Array.isArray(data.faqs) ? data.faqs : currentFaqs;
-    renderFaqEditorList();
-    el.faqSaveResult.textContent = `✅ تم حفظ ${currentFaqs.length} سؤال وتحديث الواجهة الأمامية.`;
-    el.faqSaveResult.hidden = false;
-  } catch (err) {
-    el.faqSaveError.textContent = err?.message || "فشل حفظ الأسئلة.";
-    el.faqSaveError.hidden = false;
-  } finally {
-    el.saveFaqsBtn.disabled = false;
-    el.saveFaqsBtn.textContent = "✨ مراجعة بالـ AI وحفظ";
   }
 }
 
@@ -697,7 +626,7 @@ async function enterPromptApp() {
   if (el.chatMessages && el.chatMessages.children.length === 0) {
     resetChat();
   }
-  await Promise.all([loadCurrentPrompt(), loadCurrentFaqs()]);
+  await loadCurrentPrompt();
 }
 
 async function boot() {
@@ -724,17 +653,6 @@ async function boot() {
 
   el.saveBtn?.addEventListener("click", handleManualSavePrompt);
   el.reloadBtn?.addEventListener("click", loadCurrentPrompt);
-  el.addFaqBtn?.addEventListener("click", () => {
-    currentFaqs.push({
-      id: currentFaqs.length + 1,
-      faqRef: `faq-${currentFaqs.length + 1}`,
-      question: "",
-      answer: "",
-    });
-    renderFaqEditorList();
-  });
-  el.reloadFaqsBtn?.addEventListener("click", loadCurrentFaqs);
-  el.saveFaqsBtn?.addEventListener("click", handleSaveFaqs);
 
   refreshPuterLoginStatus();
 
