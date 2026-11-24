@@ -1,10 +1,7 @@
 // ============================================================================
-// Alexanders AI Prompt Admin — AI Prompt Assistant + Manual Fine-Tuning + FAQ
-// - Primary top section: Non-technical AI Prompt Assistant (non-breaking edits,
-//   conflict detection & friendly resolution before pushing, 1 change/min limit).
-// - Secondary section: Manual Fine-Tuning with post-edit AI conflict review.
-// - Tertiary section: FAQ Editor with AI cleanup pass & GitHub Actions sync.
-// - iOS/Apple OS safe: uses sessionStorage Bearer token fallback alongside cookies.
+// Alexanders AI Prompt Admin — Standalone Direct Backend Controller (No PR)
+// Completely separated from the UI Visual Studio (admin/studio.html).
+// Uses CMS_PROMPT_ADMIN_PASSWORD & /api/cms/prompt/* endpoints only.
 // ============================================================================
 
 const DEFAULT_WORKER_ORIGIN = "https://alexanders-ai-api.sci-mohamedelsayed32561.workers.dev";
@@ -23,32 +20,14 @@ const el = {
   adminNameInput: document.getElementById("promptAdminName"),
   adminPasswordInput: document.getElementById("promptAdminPassword"),
   promptApp: document.getElementById("promptApp"),
-  logoutBtn: document.getElementById("promptLogoutBtn"),
-
-  // Primary AI Prompt Agent Chat
-  cooldownBadge: document.getElementById("promptCooldownBadge"),
-  agentClearBtn: document.getElementById("agentClearBtn"),
-  agentMessages: document.getElementById("agentMessages"),
-  agentQuickChips: document.getElementById("agentQuickChips"),
-  agentChatForm: document.getElementById("agentChatForm"),
-  agentChatInput: document.getElementById("agentChatInput"),
-  agentSendBtn: document.getElementById("agentSendBtn"),
-
-  // Manual Fine-Tuning & AI Conflict Review
-  manualDetails: document.getElementById("manualTuningDetails"),
   metaInfo: document.getElementById("promptMetaInfo"),
   instructionsInput: document.getElementById("promptInstructionsInput"),
   kbInput: document.getElementById("promptKbInput"),
-  manualReviewWarning: document.getElementById("manualReviewWarning"),
-  manualReviewSummary: document.getElementById("manualReviewSummary"),
-  manualReviewConflicts: document.getElementById("manualReviewConflicts"),
-  resolveWithAgentBtn: document.getElementById("resolveWithAgentBtn"),
-  forceSavePromptBtn: document.getElementById("forceSavePromptBtn"),
   saveError: document.getElementById("promptSaveError"),
   saveResult: document.getElementById("promptSaveResult"),
   reloadBtn: document.getElementById("reloadPromptBtn"),
   saveBtn: document.getElementById("savePromptBtn"),
-
+  logoutBtn: document.getElementById("promptLogoutBtn"),
   // FAQ section refs
   faqMetaInfo: document.getElementById("faqMetaInfo"),
   faqItemsList: document.getElementById("faqItemsList"),
@@ -60,18 +39,7 @@ const el = {
 };
 
 const PROMPT_TOKEN_KEY = "alex_cms_prompt_token";
-const AGENT_WELCOME_MESSAGE =
-  "أهلاً بك! 👋 أنا مساعدك الذكي لإدارة معلومات وتعليمات بوت ألكساندرز.\n" +
-  "اكتب لي أي معلومة جديدة أو تعديل عايز تعمله بكلام عادي (بالعربي أو الإنجليزي)، وأنا هحدّث البرومبت بأمان بدون ما أأثر على باقي المعلومات.\n" +
-  "لو في أي تعارض مع معلومات موجودة، هسألك الأول بطريقة بسيطة قبل ما أفعّل التعديل.\n" +
-  "*(ملاحظة: مسموح بتفعيل تعديل واحد على البرومبت كل دقيقة للحفاظ على استقرار البوت).*";
-
 let currentFaqs = [];
-let agentHistory = [];
-let agentBusy = false;
-let lastManualConflicts = [];
-let cooldownRemaining = 0;
-let cooldownInterval = null;
 
 function getPromptAuthHeaders(extra = {}) {
   const headers = { ...extra };
@@ -92,49 +60,6 @@ function clearPromptToken() {
   }
 }
 
-function handleUnauthorized() {
-  clearPromptToken();
-  el.promptApp.hidden = true;
-  el.loginOverlay.hidden = false;
-}
-
-// ============================================================================
-// 1. Live 1-Change-Per-Minute Cooldown Badge
-// ============================================================================
-function updateCooldownBadge() {
-  if (!el.cooldownBadge) return;
-  if (cooldownRemaining > 0) {
-    el.cooldownBadge.classList.add("is-cooling");
-    el.cooldownBadge.textContent = `⏳ التعديل القادم بعد ${cooldownRemaining} ثانية`;
-  } else {
-    el.cooldownBadge.classList.remove("is-cooling");
-    el.cooldownBadge.textContent = "جاهز للتحديث ✅";
-  }
-}
-
-function startCooldownTimer(seconds) {
-  const secs = Math.max(0, Math.ceil(Number(seconds) || 0));
-  cooldownRemaining = secs;
-  if (cooldownInterval) {
-    clearInterval(cooldownInterval);
-    cooldownInterval = null;
-  }
-  updateCooldownBadge();
-  if (cooldownRemaining <= 0) return;
-
-  cooldownInterval = setInterval(() => {
-    cooldownRemaining = Math.max(0, cooldownRemaining - 1);
-    updateCooldownBadge();
-    if (cooldownRemaining <= 0 && cooldownInterval) {
-      clearInterval(cooldownInterval);
-      cooldownInterval = null;
-    }
-  }, 1000);
-}
-
-// ============================================================================
-// 2. Auth Handlers
-// ============================================================================
 async function checkPromptSession() {
   try {
     const res = await fetch(`${API_BASE}/api/cms/prompt/session`, {
@@ -189,6 +114,78 @@ async function handleLogin(e) {
   }
 }
 
+async function loadCurrentPrompt() {
+  el.saveError.hidden = true;
+  el.saveResult.hidden = true;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/cms/prompt`, {
+      method: "GET",
+      credentials: "include",
+      headers: getPromptAuthHeaders(),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) {
+      clearPromptToken();
+      el.promptApp.hidden = true;
+      el.loginOverlay.hidden = false;
+      return;
+    }
+    if (!res.ok) {
+      throw new Error(data?.message || `HTTP ${res.status}`);
+    }
+
+    el.instructionsInput.value = data.systemInstructions || "";
+    el.kbInput.value = data.knowledgeBase || "";
+    el.metaInfo.textContent = data.updatedAt
+      ? `آخر تحديث مباشر: ${data.updatedAt} بواسطة ${data.updatedBy || "Prompt Admin"} (${data.source})`
+      : "يستخدم حالياً الإعداد الافتراضي من الخادم (default).";
+  } catch (err) {
+    el.saveError.textContent = err?.message || "تعذر تحميل البرومبت الحالي.";
+    el.saveError.hidden = false;
+  }
+}
+
+async function handleSavePrompt() {
+  el.saveError.hidden = true;
+  el.saveResult.hidden = true;
+  el.saveBtn.disabled = true;
+  el.saveBtn.textContent = "جاري الحفظ...";
+
+  try {
+    const res = await fetch(`${API_BASE}/api/cms/prompt`, {
+      method: "POST",
+      credentials: "include",
+      headers: getPromptAuthHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        systemInstructions: el.instructionsInput.value,
+        knowledgeBase: el.kbInput.value,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) {
+      clearPromptToken();
+      el.promptApp.hidden = true;
+      el.loginOverlay.hidden = false;
+      return;
+    }
+    if (!res.ok || !data?.ok) {
+      throw new Error(data?.message || `HTTP ${res.status}`);
+    }
+
+    el.metaInfo.textContent = `آخر تحديث مباشر: ${data.updatedAt} بواسطة ${data.updatedBy} (CMS_KV)`;
+    el.saveResult.textContent =
+      "✅ تم حفظ وتفعيل البرومبت الجديد مباشرة على الخادم (بدون PR)، وجاري تحديث إجابات الـ 21 سؤال شائع تلقائياً بالذكاء الاصطناعي!";
+    el.saveResult.hidden = false;
+  } catch (err) {
+    el.saveError.textContent = err?.message || "فشل حفظ البرومبت.";
+    el.saveError.hidden = false;
+  } finally {
+    el.saveBtn.disabled = false;
+    el.saveBtn.textContent = "💾 حفظ وتفعيل مباشر (بدون PR)";
+  }
+}
+
 async function handleLogout() {
   clearPromptToken();
   try {
@@ -203,416 +200,6 @@ async function handleLogout() {
   el.loginOverlay.hidden = false;
 }
 
-// ============================================================================
-// 3. Primary Top Section: AI Prompt Assistant Chatbot
-// ============================================================================
-function appendAgentMessage(role, text, options = {}) {
-  if (!el.agentMessages) return null;
-
-  const bubble = document.createElement("div");
-  bubble.className = `agent-msg agent-msg--${role}`;
-  if (options.variant === "applied") bubble.classList.add("agent-msg--applied");
-  if (options.variant === "conflict") bubble.classList.add("agent-msg--conflict");
-  if (options.variant === "error") bubble.classList.add("agent-msg--error");
-
-  const textNode = document.createElement("div");
-  textNode.textContent = text;
-  bubble.appendChild(textNode);
-
-  if (Array.isArray(options.conflicts) && options.conflicts.length > 0) {
-    const list = document.createElement("div");
-    list.className = "agent-conflict-list";
-    options.conflicts.forEach((c, idx) => {
-      const card = document.createElement("div");
-      card.className = "agent-conflict-item";
-
-      const title = document.createElement("strong");
-      title.textContent = `${idx + 1}. ${c.title || "تعارض محتمل"}`;
-      card.appendChild(title);
-
-      if (c.existingInfo) {
-        const ex = document.createElement("div");
-        ex.textContent = `• الموجود حالياً: ${c.existingInfo}`;
-        card.appendChild(ex);
-      }
-      if (c.requestedChange) {
-        const req = document.createElement("div");
-        req.textContent = `• طلبك الجديد: ${c.requestedChange}`;
-        card.appendChild(req);
-      }
-      if (c.question) {
-        const q = document.createElement("span");
-        q.className = "conflict-q";
-        q.textContent = `❓ ${c.question}`;
-        card.appendChild(q);
-      }
-      list.appendChild(card);
-    });
-    bubble.appendChild(list);
-  }
-
-  if (options.form && Array.isArray(options.form.fields) && options.form.fields.length > 0) {
-    const formEl = document.createElement("form");
-    formEl.className = "agent-inline-form";
-    const formUid = `af_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-
-    options.form.fields.forEach((field, fIdx) => {
-      const wrap = document.createElement("div");
-      wrap.className = "agent-form-field";
-
-      const labelEl = document.createElement("label");
-      labelEl.className = "agent-form-label";
-      labelEl.textContent = field.label || `حقل ${fIdx + 1}`;
-      wrap.appendChild(labelEl);
-
-      if (field.helper) {
-        const helperEl = document.createElement("div");
-        helperEl.className = "agent-form-helper";
-        helperEl.textContent = field.helper;
-        wrap.appendChild(helperEl);
-      }
-
-      const fieldName = `${formUid}_${field.id || fIdx}`;
-
-      if (field.type === "radio" && Array.isArray(field.options) && field.options.length > 0) {
-        const group = document.createElement("div");
-        group.className = "agent-radio-group";
-        field.options.forEach((opt, oIdx) => {
-          const optLabel = document.createElement("label");
-          optLabel.className = "agent-radio-option";
-          const radio = document.createElement("input");
-          radio.type = "radio";
-          radio.name = fieldName;
-          radio.value = opt.label || opt.value;
-          if (field.required && oIdx === 0) radio.required = true;
-          const span = document.createElement("span");
-          span.textContent = opt.label || opt.value;
-          optLabel.appendChild(radio);
-          optLabel.appendChild(span);
-          group.appendChild(optLabel);
-        });
-        wrap.appendChild(group);
-      } else if (field.type === "select" && Array.isArray(field.options) && field.options.length > 0) {
-        const select = document.createElement("select");
-        select.className = "agent-field-control";
-        select.name = fieldName;
-        if (field.required) select.required = true;
-        const placeholderOpt = document.createElement("option");
-        placeholderOpt.value = "";
-        placeholderOpt.textContent = "— اختر إجابة —";
-        select.appendChild(placeholderOpt);
-        field.options.forEach((opt) => {
-          const o = document.createElement("option");
-          o.value = opt.label || opt.value;
-          o.textContent = opt.label || opt.value;
-          select.appendChild(o);
-        });
-        wrap.appendChild(select);
-      } else if (field.type === "textarea") {
-        const ta = document.createElement("textarea");
-        ta.className = "agent-field-control";
-        ta.name = fieldName;
-        ta.rows = 3;
-        ta.dir = "auto";
-        ta.placeholder = field.placeholder || "اكتب إجابتك هنا...";
-        if (field.required) ta.required = true;
-        wrap.appendChild(ta);
-      } else {
-        const inp = document.createElement("input");
-        inp.type = "text";
-        inp.className = "agent-field-control";
-        inp.name = fieldName;
-        inp.dir = "auto";
-        inp.placeholder = field.placeholder || "اكتب إجابتك هنا...";
-        if (field.required) inp.required = true;
-        wrap.appendChild(inp);
-      }
-
-      formEl.appendChild(wrap);
-    });
-
-    const submitBtn = document.createElement("button");
-    submitBtn.type = "submit";
-    submitBtn.className = "studio-btn studio-btn--primary agent-form-submit";
-    submitBtn.textContent = options.form.submitLabel || "إرسال الاختيارات والمتابعة";
-    formEl.appendChild(submitBtn);
-
-    formEl.addEventListener("submit", (e) => {
-      e.preventDefault();
-      if (agentBusy) return;
-      const fd = new FormData(formEl);
-      const lines = [];
-      options.form.fields.forEach((field, fIdx) => {
-        const fieldName = `${formUid}_${field.id || fIdx}`;
-        const val = String(fd.get(fieldName) || "").trim();
-        if (val) {
-          lines.push(`• ${field.label}: ${val}`);
-        }
-      });
-      if (lines.length === 0) return;
-
-      formEl.classList.add("is-submitted");
-      submitBtn.disabled = true;
-      submitBtn.textContent = "✓ تم الإرسال";
-      sendAgentMessage(`إجاباتي:\n${lines.join("\n")}`);
-    });
-
-    bubble.appendChild(formEl);
-  }
-
-  if (options.variant === "applied") {
-    const badge = document.createElement("span");
-    badge.className = "agent-applied-badge";
-    badge.textContent = "✅ تم التفعيل المباشر وجاري تحديث الأسئلة الشائعة تلقائياً";
-    bubble.appendChild(badge);
-  }
-
-  el.agentMessages.appendChild(bubble);
-  el.agentMessages.scrollTop = el.agentMessages.scrollHeight;
-  return bubble;
-}
-
-function resetAgentChat() {
-  agentHistory = [];
-  if (el.agentMessages) {
-    el.agentMessages.innerHTML = "";
-  }
-  appendAgentMessage("assistant", AGENT_WELCOME_MESSAGE);
-}
-
-function setAgentBusy(busy) {
-  agentBusy = busy;
-  if (el.agentChatInput) el.agentChatInput.disabled = busy;
-  if (el.agentSendBtn) {
-    el.agentSendBtn.disabled = busy;
-    el.agentSendBtn.textContent = busy ? "جاري المراجعة..." : "إرسال";
-  }
-}
-
-async function sendAgentMessage(rawText) {
-  const userText = String(rawText || "").trim();
-  if (!userText || agentBusy) return;
-
-  appendAgentMessage("user", userText);
-  if (el.agentChatInput) el.agentChatInput.value = "";
-  setAgentBusy(true);
-
-  const thinkingNode = appendAgentMessage("assistant", "جاري مراجعة البرومبت الحالي والتأكد من عدم وجود تعارضات...");
-
-  try {
-    const res = await fetch(`${API_BASE}/api/cms/prompt/chat`, {
-      method: "POST",
-      credentials: "include",
-      headers: getPromptAuthHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({
-        message: userText,
-        history: agentHistory.slice(-10),
-      }),
-    });
-
-    const data = await res.json().catch(() => ({}));
-    if (thinkingNode) thinkingNode.remove();
-
-    if (res.status === 401) {
-      handleUnauthorized();
-      return;
-    }
-
-    if (res.status === 429 && data?.error === "RATE_LIMITED") {
-      startCooldownTimer(data.retryAfterSeconds || 60);
-      const reply =
-        data.reply ||
-        `مسموح بتعديل واحد فقط كل دقيقة. انتظر ${data.retryAfterSeconds || 60} ثانية ثم أعد الإرسال.`;
-      appendAgentMessage("assistant", reply, { variant: "conflict" });
-      agentHistory.push({ role: "user", content: userText });
-      agentHistory.push({ role: "assistant", content: reply });
-      return;
-    }
-
-    if (!res.ok || !data?.ok) {
-      throw new Error(data?.message || `HTTP ${res.status}`);
-    }
-
-    const replyText = String(data.reply || "تمت معالجة طلبك.").trim();
-
-    if (data.pushed && data.prompt) {
-      appendAgentMessage("assistant", replyText, { variant: "applied" });
-      // Sync manual fine-tuning fields below with the newly pushed prompt
-      el.instructionsInput.value = data.prompt.systemInstructions || "";
-      el.kbInput.value = data.prompt.knowledgeBase || "";
-      el.metaInfo.textContent = `آخر تحديث مباشر: ${data.prompt.updatedAt} بواسطة ${data.prompt.updatedBy} (CMS_KV)`;
-      el.manualReviewWarning.hidden = true;
-      startCooldownTimer(data.cooldownSeconds || 60);
-    } else if (
-      data.decision === "conflicts" ||
-      data.decision === "needs_details" ||
-      (Array.isArray(data.conflicts) && data.conflicts.length > 0) ||
-      (data.form && Array.isArray(data.form.fields) && data.form.fields.length > 0)
-    ) {
-      appendAgentMessage("assistant", replyText, {
-        variant: data.decision === "conflicts" ? "conflict" : undefined,
-        conflicts: data.conflicts || [],
-        form: data.form || null,
-      });
-    } else {
-      appendAgentMessage("assistant", replyText);
-      if (typeof data.cooldownRemainingSeconds === "number" && data.cooldownRemainingSeconds > 0) {
-        startCooldownTimer(data.cooldownRemainingSeconds);
-      }
-    }
-
-    agentHistory.push({ role: "user", content: userText });
-    agentHistory.push({ role: "assistant", content: replyText });
-    if (agentHistory.length > 16) {
-      agentHistory = agentHistory.slice(-16);
-    }
-  } catch (err) {
-    if (thinkingNode) thinkingNode.remove();
-    appendAgentMessage(
-      "assistant",
-      `حدث خطأ أثناء التواصل مع المساعد الذكي: ${err?.message || "حاول مرة أخرى."}`,
-      { variant: "error" }
-    );
-  } finally {
-    setAgentBusy(false);
-  }
-}
-
-// ============================================================================
-// 4. Secondary Section: Manual Fine-Tuning + Post-Edit AI Conflict Review
-// ============================================================================
-async function loadCurrentPrompt() {
-  el.saveError.hidden = true;
-  el.saveResult.hidden = true;
-  el.manualReviewWarning.hidden = true;
-
-  try {
-    const res = await fetch(`${API_BASE}/api/cms/prompt`, {
-      method: "GET",
-      credentials: "include",
-      headers: getPromptAuthHeaders(),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.status === 401) {
-      handleUnauthorized();
-      return;
-    }
-    if (!res.ok) {
-      throw new Error(data?.message || `HTTP ${res.status}`);
-    }
-
-    el.instructionsInput.value = data.systemInstructions || "";
-    el.kbInput.value = data.knowledgeBase || "";
-    el.metaInfo.textContent = data.updatedAt
-      ? `آخر تحديث مباشر: ${data.updatedAt} بواسطة ${data.updatedBy || "Prompt Admin"} (${data.source})`
-      : "يستخدم حالياً الإعداد الافتراضي من الخادم (default).";
-
-    if (typeof data.cooldownRemainingSeconds === "number") {
-      startCooldownTimer(data.cooldownRemainingSeconds);
-    }
-  } catch (err) {
-    el.saveError.textContent = err?.message || "تعذر تحميل البرومبت الحالي.";
-    el.saveError.hidden = false;
-  }
-}
-
-function renderManualConflicts(summary, conflicts) {
-  lastManualConflicts = Array.isArray(conflicts) ? conflicts : [];
-  el.manualReviewSummary.textContent =
-    summary || "تم رصد ملاحظات أو تعارضات محتملة في التعديل اليدوي.";
-  el.manualReviewConflicts.innerHTML = "";
-
-  lastManualConflicts.forEach((c, idx) => {
-    const item = document.createElement("div");
-    item.className = "agent-conflict-item";
-
-    const title = document.createElement("strong");
-    title.textContent = `${idx + 1}. ${c.title || "ملاحظة"}`;
-    item.appendChild(title);
-
-    if (c.detail) {
-      const d = document.createElement("div");
-      d.textContent = c.detail;
-      item.appendChild(d);
-    }
-    if (c.suggestion) {
-      const s = document.createElement("span");
-      s.className = "conflict-q";
-      s.textContent = `💡 اقتراح: ${c.suggestion}`;
-      item.appendChild(s);
-    }
-    el.manualReviewConflicts.appendChild(item);
-  });
-
-  el.manualReviewWarning.hidden = false;
-}
-
-async function handleSavePrompt(forcePush = false) {
-  el.saveError.hidden = true;
-  el.saveResult.hidden = true;
-  if (forcePush) {
-    el.manualReviewWarning.hidden = true;
-  }
-  el.saveBtn.disabled = true;
-  if (el.forceSavePromptBtn) el.forceSavePromptBtn.disabled = true;
-  el.saveBtn.textContent = forcePush
-    ? "جاري الحفظ والتفعيل..."
-    : "🔍 جاري مراجعة التعارضات بالـ AI...";
-
-  try {
-    const res = await fetch(`${API_BASE}/api/cms/prompt`, {
-      method: "POST",
-      credentials: "include",
-      headers: getPromptAuthHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({
-        systemInstructions: el.instructionsInput.value,
-        knowledgeBase: el.kbInput.value,
-        forcePush: Boolean(forcePush),
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.status === 401) {
-      handleUnauthorized();
-      return;
-    }
-
-    if (res.status === 429 && data?.error === "RATE_LIMITED") {
-      startCooldownTimer(data.retryAfterSeconds || 60);
-      throw new Error(
-        data.message || `يمكن إجراء تعديل واحد فقط كل دقيقة. انتظر ${data.retryAfterSeconds || 60} ثانية.`
-      );
-    }
-
-    // AI review detected potential conflicts before pushing
-    if (data?.reviewBlocked && data?.status === "conflicts_found") {
-      renderManualConflicts(data.summary, data.conflicts);
-      return;
-    }
-
-    if (!res.ok || !data?.ok) {
-      throw new Error(data?.message || `HTTP ${res.status}`);
-    }
-
-    el.manualReviewWarning.hidden = true;
-    startCooldownTimer(data.cooldownSeconds || 60);
-    el.metaInfo.textContent = `آخر تحديث مباشر: ${data.updatedAt} بواسطة ${data.updatedBy} (CMS_KV)`;
-    const reviewNote = data.reviewSummary ? ` (${data.reviewSummary})` : "";
-    el.saveResult.textContent =
-      `✅ تم حفظ وتفعيل البرومبت الجديد مباشرة على الخادم${reviewNote}، وجاري تحديث إجابات الأسئلة الشائعة تلقائياً بالذكاء الاصطناعي!`;
-    el.saveResult.hidden = false;
-  } catch (err) {
-    el.saveError.textContent = err?.message || "فشل حفظ البرومبت.";
-    el.saveError.hidden = false;
-  } finally {
-    el.saveBtn.disabled = false;
-    if (el.forceSavePromptBtn) el.forceSavePromptBtn.disabled = false;
-    el.saveBtn.textContent = "🔍 مراجعة بالـ AI وحفظ التعديل اليدوي";
-  }
-}
-
-// ============================================================================
-// 5. Tertiary Section: FAQ Editor
-// ============================================================================
 function renderFaqEditorList() {
   if (!el.faqItemsList) return;
   el.faqItemsList.innerHTML = "";
@@ -683,7 +270,9 @@ async function loadCurrentFaqs() {
     });
     const data = await res.json().catch(() => ({}));
     if (res.status === 401) {
-      handleUnauthorized();
+      clearPromptToken();
+      el.promptApp.hidden = true;
+      el.loginOverlay.hidden = false;
       return;
     }
     if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
@@ -714,7 +303,9 @@ async function handleSaveFaqs() {
     });
     const data = await res.json().catch(() => ({}));
     if (res.status === 401) {
-      handleUnauthorized();
+      clearPromptToken();
+      el.promptApp.hidden = true;
+      el.loginOverlay.hidden = false;
       return;
     }
     if (!res.ok || !data?.ok) {
@@ -740,56 +331,18 @@ async function handleSaveFaqs() {
   }
 }
 
-// ============================================================================
-// 6. App Boot
-// ============================================================================
 async function enterPromptApp() {
   el.loginOverlay.hidden = true;
   el.promptApp.hidden = false;
-  if (el.agentMessages && el.agentMessages.children.length === 0) {
-    resetAgentChat();
-  }
   await Promise.all([loadCurrentPrompt(), loadCurrentFaqs()]);
 }
 
 async function boot() {
   el.loginForm.addEventListener("submit", handleLogin);
+  el.saveBtn.addEventListener("click", handleSavePrompt);
+  el.reloadBtn.addEventListener("click", loadCurrentPrompt);
   el.logoutBtn.addEventListener("click", handleLogout);
 
-  // AI Agent Chat wiring
-  el.agentChatForm?.addEventListener("submit", (e) => {
-    e.preventDefault();
-    sendAgentMessage(el.agentChatInput?.value);
-  });
-  el.agentChatInput?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendAgentMessage(el.agentChatInput.value);
-    }
-  });
-  el.agentClearBtn?.addEventListener("click", resetAgentChat);
-  el.agentQuickChips?.querySelectorAll(".agent-chip").forEach((chip) => {
-    chip.addEventListener("click", () => {
-      const promptText = chip.dataset.prompt || chip.textContent;
-      sendAgentMessage(promptText);
-    });
-  });
-
-  // Manual Fine-Tuning wiring
-  el.saveBtn.addEventListener("click", () => handleSavePrompt(false));
-  el.forceSavePromptBtn?.addEventListener("click", () => handleSavePrompt(true));
-  el.resolveWithAgentBtn?.addEventListener("click", () => {
-    const summaryList = lastManualConflicts
-      .map((c, i) => `${i + 1}) ${c.title}: ${c.detail}`)
-      .join("\n");
-    window.scrollTo({ top: 0, behavior: "smooth" });
-    sendAgentMessage(
-      `حاولت أعدل البرومبت يدوياً لكن المراجعة رصدت التعارضات دي، ساعدني أحلها بطريقة آمنة:\n${summaryList}`
-    );
-  });
-  el.reloadBtn.addEventListener("click", loadCurrentPrompt);
-
-  // FAQ wiring
   el.addFaqBtn.addEventListener("click", () => {
     currentFaqs.push({
       id: currentFaqs.length + 1,
