@@ -225,6 +225,7 @@ const el = {
   // AI Preview & Confirmation Modal
   aiPreviewModal: document.getElementById("aiPreviewModal"),
   aiPreviewSummary: document.getElementById("aiPreviewSummary"),
+  aiPreviewOpenTabBtn: document.getElementById("aiPreviewOpenTabBtn"),
   aiPreviewDesktopBtn: document.getElementById("aiPreviewDesktopBtn"),
   aiPreviewMobileBtn: document.getElementById("aiPreviewMobileBtn"),
   closeAiPreviewBtn: document.getElementById("closeAiPreviewBtn"),
@@ -1497,6 +1498,23 @@ function applyIncrementalStudioChanges(baseBodyHtml, baseScopedCss, changes) {
   return { bodyHtml, scopedCss, applied };
 }
 
+let lastPreviewBlobUrl = null;
+
+function openPreviewHtmlInNewTab(htmlString) {
+  if (!htmlString) return;
+  try {
+    if (lastPreviewBlobUrl) {
+      URL.revokeObjectURL(lastPreviewBlobUrl);
+      lastPreviewBlobUrl = null;
+    }
+    const blob = new Blob([htmlString], { type: "text/html; charset=utf-8" });
+    lastPreviewBlobUrl = URL.createObjectURL(blob);
+    window.open(lastPreviewBlobUrl, "_blank", "noopener");
+  } catch {
+    // Fallback if browser blocks blob tab
+  }
+}
+
 function openAiPreviewModal(proposal) {
   el.aiPreviewError.hidden = true;
   el.aiPreviewResult.hidden = true;
@@ -1527,9 +1545,11 @@ function openAiPreviewModal(proposal) {
       scopedCss: updatedScopedCss,
     });
 
-    // Render live preview inside iframe using <base href="../"> so relative CSS & assets load cleanly!
+    // Use absolute site origin <base href="https://alexfa.me/"> so CSS & assets load cleanly
+    // both in the new full-screen browser tab (blob URL) and in the inline preview iframe.
+    const siteBaseHref = `${window.location.origin}/`;
     const previewHtml = fullDocForPr
-      .replace("<head>", '<head>\n  <base href="../">')
+      .replace("<head>", `<head>\n  <base href="${siteBaseHref}">`)
       .replace(/<script[\s\S]*?<\/script>/gi, "");
 
     pendingAiPreview = {
@@ -1541,7 +1561,11 @@ function openAiPreviewModal(proposal) {
       updatedBodyHtml,
       updatedScopedCss,
       fullDocForPr,
+      previewHtml,
     };
+
+    // Open full-screen preview immediately in a new tab (synchronously inside click gesture)
+    openPreviewHtmlInNewTab(previewHtml);
 
     el.aiPreviewSummary.textContent = `${proposal.pageFile} — ${proposal.summary}`;
     el.aiPreviewDiffList.innerHTML = "";
@@ -1841,6 +1865,11 @@ function wireEvents() {
   };
   el.closeAiPreviewBtn.addEventListener("click", closePreview);
   el.aiCancelPreviewBtn.addEventListener("click", closePreview);
+  el.aiPreviewOpenTabBtn.addEventListener("click", () => {
+    if (pendingAiPreview?.previewHtml) {
+      openPreviewHtmlInNewTab(pendingAiPreview.previewHtml);
+    }
+  });
   el.aiPreviewDesktopBtn.addEventListener("click", () => {
     el.aiPreviewFrame.classList.remove("is-mobile");
     el.aiPreviewDesktopBtn.classList.add("is-active");
