@@ -79,6 +79,7 @@
   };
   let quotaResetTimer = null;
   let currentUserProfile = null;
+  let cachedClientSystemPrompt = null;
 
   // DOM references set on mount
   const dom = {};
@@ -376,9 +377,11 @@
       }
       if (data?.isAuthenticated && data?.user?.userId) {
         currentUserProfile = data.user;
+        loadClientSystemPromptOnce();
       } else if (token && data?.isAuthenticated === false) {
         clearCachedPuterToken();
         currentUserProfile = null;
+        cachedClientSystemPrompt = null;
       }
       if (data?.guestQuota) {
         guestQuota = {
@@ -495,7 +498,7 @@
         persistPuterToken(token);
 
         hideAuthPrompt();
-        await linkSessionWithWorker();
+        await Promise.all([linkSessionWithWorker(), loadClientSystemPromptOnce()]);
         await refreshAuthUI();
 
         if (authNonce === sessionNonce && pendingMessage) {
@@ -955,47 +958,54 @@
       .slice(0, 1200);
   }
 
+  async function loadClientSystemPromptOnce() {
+    if (cachedClientSystemPrompt) return cachedClientSystemPrompt;
+    const token = await getPuterAuthToken();
+    if (!token) return null;
+
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 5000);
+      const res = await fetch(CHAT_CONTEXT_ENDPOINT, {
+        method: "GET",
+        credentials: "include",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        signal: ctrl.signal,
+      });
+      clearTimeout(timer);
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (typeof data?.systemPrompt === "string" && data.systemPrompt.trim()) {
+          cachedClientSystemPrompt = data.systemPrompt.trim();
+          return cachedClientSystemPrompt;
+        }
+      }
+    } catch {
+      // Non-fatal; fallback to local public FAQ context if Worker is unreachable
+    }
+    return cachedClientSystemPrompt;
+  }
+
   async function runClientSidePuterChat(userText) {
     if (!isClientPuterAiReady()) {
       throw new Error("CLIENT_PUTER_UNAVAILABLE");
     }
 
-    let personaHint =
-      "You are the helpful assistant for Alexanders Group (كيان ألكساندرز - جامعة الإسكندرية). Answer concisely in the user's language using only the provided facts.";
-    let contextSnippet = "";
-
-    // 1. Try to fetch ONLY 1–2 minimal relevant public snippets from Worker (never full prompt)
-    try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 5000);
-      const ctxRes = await fetch(CHAT_CONTEXT_ENDPOINT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ message: userText }),
-        signal: ctrl.signal,
-      });
-      clearTimeout(timer);
-      if (ctxRes.ok) {
-        const ctxData = await ctxRes.json().catch(() => ({}));
-        if (ctxData?.personaHint) personaHint = ctxData.personaHint;
-        if (ctxData?.contextSnippet) contextSnippet = ctxData.contextSnippet;
-      }
-    } catch {
-      // Worker unreachable -> fall back to top 2 matching local public FAQ items
-    }
-
-    if (!contextSnippet) {
-      contextSnippet = buildLocalFaqFallbackContext(userText);
+    // Use the full system prompt already cached at login (zero per-message Worker context calls)
+    let systemContent = cachedClientSystemPrompt || (await loadClientSystemPromptOnce());
+    if (!systemContent) {
+      const faqFallback = buildLocalFaqFallbackContext(userText);
+      systemContent =
+        "You are the helpful assistant for Alexanders Group (كيان ألكساندرز - جامعة الإسكندرية). Answer concisely in the user's language using only the provided facts." +
+        (faqFallback ? `\n\nRelevant facts:\n${faqFallback}` : "");
     }
 
     const clientMessages = [
-      {
-        role: "system",
-        content: contextSnippet
-          ? `${personaHint}\n\nRelevant facts:\n${contextSnippet}`
-          : personaHint,
-      },
-      ...conversationHistory.slice(-6),
+      { role: "system", content: systemContent },
+      ...conversationHistory.slice(-MAX_HISTORY_MESSAGES),
       { role: "user", content: userText },
     ];
 
@@ -1005,7 +1015,7 @@
       throw new Error("EMPTY_CLIENT_PUTER_REPLY");
     }
 
-    // Best-effort background log to Worker (never blocks reply)
+    // Only store { userMessage, assistantResponse } on the Worker after Puter.js responds
     try {
       const headers = { "Content-Type": "application/json" };
       const tok = await getPuterAuthToken();
@@ -1061,6 +1071,15 @@
     };
 
     try {
+      // Fast path: if 5/min server quota is already exhausted and user is signed into Puter,
+      // skip calling /api/chat completely — run Puter client-side with cached context & log after.
+      if (isUserSignedIn() && isClientPuterAiReady() && guestQuota.remaining <= 0) {
+        const clientReply = await runClientSidePuterChat(userText);
+        if (activeNonce !== sessionNonce) return;
+        await renderFinalReply(clientReply);
+        return;
+      }
+
       const headers = {
         "Content-Type": "application/json",
         Accept: "application/json",
