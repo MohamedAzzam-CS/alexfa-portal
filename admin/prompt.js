@@ -339,30 +339,63 @@ function parseProposalFromReply(rawText) {
 
   try {
     const parsed = JSON.parse(jsonChunk);
-    const sys =
-      typeof parsed?.systemInstructions === "string" && parsed.systemInstructions.trim()
-        ? parsed.systemInstructions.trim()
-        : currentPromptState.systemInstructions;
-    const kb =
-      typeof parsed?.knowledgeBase === "string" && parsed.knowledgeBase.trim()
-        ? parsed.knowledgeBase.trim()
-        : currentPromptState.knowledgeBase;
+    const rawChanges = Array.isArray(parsed?.changes) ? parsed.changes : [];
+    const changes = rawChanges
+      .filter((c) => c && typeof c === "object")
+      .map((c) => ({
+        target: c.target === "systemInstructions" ? "systemInstructions" : "knowledgeBase",
+        action: ["add", "replace", "remove"].includes(c.action) ? c.action : "add",
+        oldText: typeof c.oldText === "string" ? c.oldText.trim() : "",
+        newText: typeof c.newText === "string" ? c.newText.trim() : "",
+      }))
+      .filter((c) => (c.action === "add" ? Boolean(c.newText) : Boolean(c.oldText)));
 
-    if (!sys || !kb) {
+    if (changes.length === 0) {
       return { cleanText: cleanText || text.trim(), proposal: null };
     }
 
     return {
-      cleanText: cleanText || "جهّزت التعديل المقترح بالأسفل — راجعه واضغط تأكيد للتفعيل:",
+      cleanText: cleanText || "تم تجهيز التعديل التالي — راجعه واضغط تأكيد للحفظ:",
       proposal: {
-        summary: String(parsed?.summary || "تعديل مقترح على البرومبت وقاعدة المعرفة").trim(),
-        systemInstructions: sys,
-        knowledgeBase: kb,
+        summary: String(parsed?.summary || "التعديلات المقترحة").trim(),
+        changes,
       },
     };
   } catch {
     return { cleanText: cleanText || text.trim(), proposal: null };
   }
+}
+
+function applySurgicalChangesToPrompt(basePrompt, changes) {
+  let systemInstructions = String(basePrompt?.systemInstructions || "");
+  let knowledgeBase = String(basePrompt?.knowledgeBase || "");
+
+  for (const ch of changes) {
+    let val = ch.target === "systemInstructions" ? systemInstructions : knowledgeBase;
+
+    if (ch.action === "add") {
+      const sep = val.endsWith("\n") ? "\n" : "\n\n";
+      val = `${val}${sep}${ch.newText}`;
+    } else if (ch.action === "replace") {
+      if (!val.includes(ch.oldText)) {
+        throw new Error("تعذر العثور على النص القديم بدقة في البرومبت الحالي. اطلب من المساعد إعادة صياغة التعديل.");
+      }
+      val = val.replace(ch.oldText, ch.newText);
+    } else if (ch.action === "remove") {
+      if (!val.includes(ch.oldText)) {
+        throw new Error("تعذر العثور على النص المراد حذفه بدقة في البرومبت الحالي.");
+      }
+      val = val.replace(ch.oldText, "").replace(/\n{3,}/g, "\n\n").trim();
+    }
+
+    if (ch.target === "systemInstructions") {
+      systemInstructions = val;
+    } else {
+      knowledgeBase = val;
+    }
+  }
+
+  return { systemInstructions, knowledgeBase };
 }
 
 function renderProposalCard(proposal) {
@@ -371,39 +404,55 @@ function renderProposalCard(proposal) {
 
   const title = document.createElement("h3");
   title.className = "proposal-title";
-  title.textContent = "📋 معاينة البرومبت النهائي (بانتظار تأكيدك)";
+  title.textContent = "📋 التعديلات المقترحة فقط (بانتظار تأكيدك)";
   card.appendChild(title);
 
-  const summary = document.createElement("p");
-  summary.className = "proposal-summary";
-  summary.textContent = proposal.summary;
-  card.appendChild(summary);
+  if (proposal.summary) {
+    const summary = document.createElement("p");
+    summary.className = "proposal-summary";
+    summary.textContent = proposal.summary;
+    card.appendChild(summary);
+  }
 
-  // Expandable preview of System Instructions
-  const sysDetails = document.createElement("details");
-  sysDetails.className = "proposal-preview-details";
-  const sysSum = document.createElement("summary");
-  sysSum.textContent = `معاينة تعليمات النظام (${proposal.systemInstructions.length} حرف)`;
-  const sysBox = document.createElement("div");
-  sysBox.className = "proposal-preview-box";
-  sysBox.dir = "auto";
-  sysBox.textContent = proposal.systemInstructions;
-  sysDetails.appendChild(sysSum);
-  sysDetails.appendChild(sysBox);
-  card.appendChild(sysDetails);
+  // Render ONLY the exact changes (Add / Replace / Remove) — never the full prompt!
+  const diffList = document.createElement("div");
+  diffList.className = "change-diff-list";
 
-  // Expandable preview of Knowledge Base
-  const kbDetails = document.createElement("details");
-  kbDetails.className = "proposal-preview-details";
-  const kbSum = document.createElement("summary");
-  kbSum.textContent = `معاينة قاعدة المعرفة النهائية (${proposal.knowledgeBase.length} حرف)`;
-  const kbBox = document.createElement("div");
-  kbBox.className = "proposal-preview-box";
-  kbBox.dir = "auto";
-  kbBox.textContent = proposal.knowledgeBase;
-  kbDetails.appendChild(kbSum);
-  kbDetails.appendChild(kbBox);
-  card.appendChild(kbDetails);
+  proposal.changes.forEach((ch) => {
+    const item = document.createElement("div");
+    item.className = "change-diff-item";
+
+    const badge = document.createElement("span");
+    badge.className = `diff-badge diff-badge--${ch.action}`;
+    const targetLabel = ch.target === "systemInstructions" ? "تعليمات النظام" : "قاعدة المعرفة";
+    badge.textContent =
+      ch.action === "add"
+        ? `➕ إضافة (${targetLabel})`
+        : ch.action === "replace"
+          ? `🔄 استبدال (${targetLabel})`
+          : `🗑️ حذف (${targetLabel})`;
+    item.appendChild(badge);
+
+    if ((ch.action === "replace" || ch.action === "remove") && ch.oldText) {
+      const oldBox = document.createElement("div");
+      oldBox.className = "diff-old";
+      oldBox.dir = "auto";
+      oldBox.textContent = ch.oldText;
+      item.appendChild(oldBox);
+    }
+
+    if ((ch.action === "add" || ch.action === "replace") && ch.newText) {
+      const newBox = document.createElement("div");
+      newBox.className = "diff-new";
+      newBox.dir = "auto";
+      newBox.textContent = ch.newText;
+      item.appendChild(newBox);
+    }
+
+    diffList.appendChild(item);
+  });
+
+  card.appendChild(diffList);
 
   // Explicit review checkbox required before confirm button is enabled
   const checkLabel = document.createElement("label");
@@ -412,7 +461,7 @@ function renderProposalCard(proposal) {
   checkInput.type = "checkbox";
   const checkText = document.createElement("span");
   checkText.textContent =
-    "راجعت المعاينة النهائية والتواريخ بتوقيت مصر وأؤكد رغبتي في تفعيل هذا التعديل مباشرة على المساعد الذكي.";
+    "راجعت هذه التعديلات وأؤكد رغبتي في تفعيلها مباشرة على المساعد الذكي.";
   checkLabel.appendChild(checkInput);
   checkLabel.appendChild(checkText);
   card.appendChild(checkLabel);
@@ -423,7 +472,7 @@ function renderProposalCard(proposal) {
   const confirmBtn = document.createElement("button");
   confirmBtn.type = "button";
   confirmBtn.className = "studio-btn studio-btn--primary";
-  confirmBtn.textContent = "✅ تأكيد وتفعيل التعديل";
+  confirmBtn.textContent = "✅ تأكيد التعديلات";
   confirmBtn.disabled = true;
 
   const cancelBtn = document.createElement("button");
@@ -445,7 +494,7 @@ function renderProposalCard(proposal) {
       armTimer = null;
     }
     confirmBtn.classList.remove("is-armed");
-    confirmBtn.textContent = "✅ تأكيد وتفعيل التعديل";
+    confirmBtn.textContent = "✅ تأكيد التعديلات";
   };
 
   checkInput.addEventListener("change", () => {
@@ -471,20 +520,18 @@ function renderProposalCard(proposal) {
     cancelBtn.disabled = true;
     confirmBtn.textContent = "جاري الحفظ والتفعيل...";
     try {
-      await pushPromptToServer({
-        systemInstructions: proposal.systemInstructions,
-        knowledgeBase: proposal.knowledgeBase,
-      });
+      const updated = applySurgicalChangesToPrompt(currentPromptState, proposal.changes);
+      await pushPromptToServer(updated);
       card.classList.add("is-confirmed");
       checkLabel.hidden = true;
       actions.hidden = true;
-      statusLine.textContent = "✅ تم حفظ وتفعيل البرومبت الجديد مباشرة على الخادم!";
+      statusLine.textContent = "✅ تم تطبيق التعديلات بنجاح وتحديث المساعد والأسئلة الشائعة!";
       statusLine.hidden = false;
     } catch (err) {
       checkInput.disabled = false;
       confirmBtn.disabled = false;
       cancelBtn.disabled = false;
-      confirmBtn.textContent = "✅ تأكيد وتفعيل التعديل";
+      confirmBtn.textContent = "✅ تأكيد التعديلات";
       statusLine.style.color = "#fca5a5";
       statusLine.textContent = `فشل الحفظ: ${err?.message || "حاول مرة أخرى"}`;
       statusLine.hidden = false;
