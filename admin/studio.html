@@ -220,8 +220,9 @@
               ></textarea>
             </div>
             <div id="geminiImportError" class="studio-error" hidden></div>
+            <div id="geminiImportSuccess" class="studio-pr-result" style="margin-bottom:8px;" hidden></div>
             <button id="previewGeminiImportBtn" type="button" class="studio-btn studio-btn--primary studio-btn--full">
-              👁️ معاينة في تبويب جديد وتأكيد PR
+              ✨ تطبيق التعديلات على الصفحة مباشرة
             </button>
           </div>
         </div>
@@ -229,47 +230,7 @@
     </div>
   </div>
 
-  <!-- 3. Modal: AI Change Preview & Explicit PR Confirmation -->
-  <div id="aiPreviewModal" class="studio-modal-backdrop" hidden>
-    <div class="studio-modal studio-preview-modal">
-      <div class="studio-preview-header">
-        <div>
-          <h3 style="margin: 0 0 4px;">👁️ معاينة التعديلات المقترحة قبل فتح Pull Request</h3>
-          <p id="aiPreviewSummary" style="margin: 0; font-size: 0.84rem; color: var(--studio-muted);"></p>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-          <button type="button" id="aiPreviewOpenTabBtn" class="studio-btn studio-btn--primary">↗️ فتح في تبويب جديد (ملء الشاشة)</button>
-          <button type="button" id="aiPreviewDesktopBtn" class="studio-btn is-active">🖥️ كمبيوتر</button>
-          <button type="button" id="aiPreviewMobileBtn" class="studio-btn">📱 موبايل</button>
-          <button type="button" id="closeAiPreviewBtn" class="studio-btn">✕</button>
-        </div>
-      </div>
-
-      <div id="aiPreviewDiffList" class="studio-preview-diffs"></div>
-
-      <div class="studio-preview-frame-wrap">
-        <iframe id="aiPreviewFrame" class="studio-preview-frame" sandbox="allow-same-origin" title="معاينة الصفحة المعدّلة"></iframe>
-      </div>
-
-      <label class="studio-preview-confirm-check">
-        <input type="checkbox" id="aiPreviewConfirmCheckbox">
-        <span>راجعت المعاينة المباشرة للتعديلات وأؤكد رغبتي في فتح Pull Request بهذه التغييرات على الكود.</span>
-      </label>
-
-      <div id="aiPreviewError" class="studio-error" hidden></div>
-      <div id="aiPreviewResult" class="studio-pr-result" hidden></div>
-
-      <div class="studio-modal-actions">
-        <button type="button" id="aiCancelPreviewBtn" class="studio-btn">❌ إلغاء</button>
-        <button type="button" id="aiApplyCanvasOnlyBtn" class="studio-btn">📥 تطبيق في المحرر فقط</button>
-        <button type="button" id="aiConfirmOpenPrBtn" class="studio-btn studio-btn--primary" disabled>
-          ✅ تأكيد وفتح Pull Request
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 4. Modal: Submit Manual Changes PR -->
+  <!-- 3. Modal: Submit Changes PR -->
   <div id="submitPrModal" class="studio-modal-backdrop" hidden>
     <div class="studio-modal">
       <h3>إرسال التعديلات للمراجعة (Pull Request)</h3>

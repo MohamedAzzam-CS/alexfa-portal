@@ -220,23 +220,8 @@ const el = {
   geminiPrSummaryInput: document.getElementById("geminiPrSummaryInput"),
   geminiImportTextarea: document.getElementById("geminiImportTextarea"),
   geminiImportError: document.getElementById("geminiImportError"),
+  geminiImportSuccess: document.getElementById("geminiImportSuccess"),
   previewGeminiImportBtn: document.getElementById("previewGeminiImportBtn"),
-
-  // AI Preview & Confirmation Modal
-  aiPreviewModal: document.getElementById("aiPreviewModal"),
-  aiPreviewSummary: document.getElementById("aiPreviewSummary"),
-  aiPreviewOpenTabBtn: document.getElementById("aiPreviewOpenTabBtn"),
-  aiPreviewDesktopBtn: document.getElementById("aiPreviewDesktopBtn"),
-  aiPreviewMobileBtn: document.getElementById("aiPreviewMobileBtn"),
-  closeAiPreviewBtn: document.getElementById("closeAiPreviewBtn"),
-  aiPreviewDiffList: document.getElementById("aiPreviewDiffList"),
-  aiPreviewFrame: document.getElementById("aiPreviewFrame"),
-  aiPreviewConfirmCheckbox: document.getElementById("aiPreviewConfirmCheckbox"),
-  aiPreviewError: document.getElementById("aiPreviewError"),
-  aiPreviewResult: document.getElementById("aiPreviewResult"),
-  aiCancelPreviewBtn: document.getElementById("aiCancelPreviewBtn"),
-  aiApplyCanvasOnlyBtn: document.getElementById("aiApplyCanvasOnlyBtn"),
-  aiConfirmOpenPrBtn: document.getElementById("aiConfirmOpenPrBtn"),
 
   // Manual PR Modal
   submitPrModal: document.getElementById("submitPrModal"),
@@ -1429,126 +1414,82 @@ function cleanGeminiPastedHtml(rawPasted) {
   return html;
 }
 
-function previewGeminiImportedHtml() {
+function applyGeminiImportedHtmlToSamePage() {
   el.geminiImportError.hidden = true;
-  el.aiPreviewError.hidden = true;
-  el.aiPreviewResult.hidden = true;
-  el.aiPreviewConfirmCheckbox.checked = false;
-  el.aiConfirmOpenPrBtn.disabled = true;
+  if (el.geminiImportSuccess) el.geminiImportSuccess.hidden = true;
 
   try {
     const cleanedFullHtml = cleanGeminiPastedHtml(el.geminiImportTextarea?.value);
-    const { title, bodyHtml, scopedCss } = extractEditableBody(cleanedFullHtml);
-    const normalizedBody = normalizeExportedHtml(bodyHtml);
-    const summary =
-      (el.geminiPrSummaryInput?.value || "").trim() ||
-      `تحديث تصميم ${currentPageFile} عبر Gemini Canvas`;
 
-    const siteBaseHref = `${window.location.origin}/`;
-    const previewHtml = cleanedFullHtml
-      .replace(/<head([^>]*)>/i, `<head$1>\n  <base href="${siteBaseHref}">`)
-      .replace(/<script[\s\S]*?<\/script>/gi, "");
+    // Parse full HTML and collect ALL <style> tags (so Gemini Canvas's custom CSS reflects immediately!)
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(cleanedFullHtml, "text/html");
+    const title = doc.querySelector("title")?.textContent?.trim() || `Alexanders | ${currentPageFile}`;
 
-    pendingAiPreview = {
-      pageFile: currentPageFile,
+    // Load any Google Fonts stylesheets Gemini added into the live canvas iframe
+    const frameDoc = editor?.Canvas?.getDocument?.();
+    doc.querySelectorAll('link[rel="stylesheet"]').forEach((lnk) => {
+      const href = lnk.getAttribute("href") || "";
+      if (href.includes("fonts.googleapis.com") && frameDoc) {
+        if (!Array.from(frameDoc.querySelectorAll("link")).some((l) => l.getAttribute("href") === href)) {
+          const newLink = frameDoc.createElement("link");
+          newLink.rel = "stylesheet";
+          newLink.href = href;
+          frameDoc.head.appendChild(newLink);
+        }
+      }
+    });
+
+    const allCssChunks = [];
+    doc.querySelectorAll("style").forEach((st) => {
+      const txt = (st.textContent || "").trim();
+      if (txt) allCssChunks.push(txt);
+      st.remove();
+    });
+    const combinedScopedCss = allCssChunks.join("\n\n");
+
+    doc.body.querySelectorAll("script, noscript").forEach((n) => n.remove());
+    doc.body
+      .querySelectorAll(".fade-in, .fade-in-left, .fade-in-right, .stagger-children")
+      .forEach((n) => n.classList.add("visible"));
+
+    const normalizedBody = normalizeExportedHtml(doc.body.innerHTML);
+    const previewBody = normalizedBody.replace(/(src|srcset)="assets\//g, '$1="../assets/');
+
+    // Save draft for PR submission
+    pageDrafts.set(currentPageFile, {
       title,
       extraCss: PAGE_EXTRA_CSS[currentPageFile] || [],
-      summary,
-      updatedBodyHtml: normalizedBody,
-      updatedScopedCss: scopedCss,
-      fullDocForPr: cleanedFullHtml,
-      previewHtml,
-    };
+      bodyHtml: normalizedBody,
+      scopedCss: combinedScopedCss,
+      dirty: true,
+    });
 
-    // Open full-screen preview immediately in a new tab
-    openPreviewHtmlInNewTab(previewHtml);
+    // Reflect changes immediately on the SAME Studio canvas page!
+    suppressDirtyTracking = true;
+    editor.setComponents(previewBody);
+    editor.setStyle(combinedScopedCss);
+    configureComponentGuardrails(editor.getWrapper());
+    applyVariablesToCanvas();
+    setTimeout(() => {
+      suppressDirtyTracking = false;
+    }, 80);
 
-    el.aiPreviewSummary.textContent = `${currentPageFile} — ${summary}`;
-    el.aiPreviewDiffList.innerHTML = "";
-    const pill = document.createElement("span");
-    pill.className = "studio-preview-diff-pill";
-    pill.textContent = `✨ كود مستورد من Gemini Canvas (${cleanedFullHtml.length.toLocaleString()} حرف)`;
-    el.aiPreviewDiffList.appendChild(pill);
+    // Pre-fill PR summary if user entered one
+    const customSummary = (el.geminiPrSummaryInput?.value || "").trim();
+    if (customSummary && el.prSummaryInput && !el.prSummaryInput.value.trim()) {
+      el.prSummaryInput.value = customSummary;
+    }
 
-    el.aiPreviewFrame.classList.remove("is-mobile");
-    el.aiPreviewDesktopBtn.classList.add("is-active");
-    el.aiPreviewMobileBtn.classList.remove("is-active");
-    el.aiPreviewFrame.srcdoc = previewHtml;
-    el.aiPreviewModal.hidden = false;
+    updatePendingBadge();
+    if (el.geminiImportSuccess) {
+      el.geminiImportSuccess.textContent =
+        "✅ تم تطبيق التعديلات مباشرة على الصفحة! راجعها هنا أو اضغط (🚀 إرسال للمراجعة PR) أو (↺ العودة للأصل).";
+      el.geminiImportSuccess.hidden = false;
+    }
   } catch (err) {
     el.geminiImportError.textContent = err?.message || "تعذر قراءة كود HTML.";
     el.geminiImportError.hidden = false;
-  }
-}
-
-function applyPendingAiToCanvas() {
-  if (!pendingAiPreview) return;
-  const p = pendingAiPreview;
-  pageDrafts.set(p.pageFile, {
-    title: p.title,
-    extraCss: p.extraCss,
-    bodyHtml: p.updatedBodyHtml,
-    scopedCss: p.updatedScopedCss,
-    dirty: true,
-  });
-
-  if (p.pageFile === currentPageFile) {
-    suppressDirtyTracking = true;
-    const previewBody = p.updatedBodyHtml.replace(/(src|srcset)="assets\//g, '$1="../assets/');
-    editor.setComponents(previewBody);
-    editor.setStyle(p.updatedScopedCss);
-    configureComponentGuardrails(editor.getWrapper());
-    setTimeout(() => {
-      suppressDirtyTracking = false;
-    }, 60);
-  }
-  updatePendingBadge();
-}
-
-async function confirmAndOpenAiPr() {
-  if (!pendingAiPreview || !el.aiPreviewConfirmCheckbox.checked) return;
-  el.aiPreviewError.hidden = true;
-  el.aiPreviewResult.hidden = true;
-  el.aiConfirmOpenPrBtn.disabled = true;
-  el.aiConfirmOpenPrBtn.textContent = "جاري فتح Pull Request...";
-
-  try {
-    const p = pendingAiPreview;
-    applyPendingAiToCanvas();
-
-    const res = await fetch(`${API_BASE}/api/cms/submit`, {
-      method: "POST",
-      credentials: "include",
-      headers: getStudioAuthHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({
-        summary: `[Gemini Canvas] ${p.summary}`,
-        files: [{ path: p.pageFile, content: p.fullDocForPr, encoding: "utf-8" }],
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.status === 401) {
-      clearStudioToken();
-      el.aiPreviewModal.hidden = true;
-      el.studioApp.hidden = true;
-      el.loginOverlay.hidden = false;
-      return;
-    }
-    if (!res.ok || !data?.ok) {
-      throw new Error(data?.message || `HTTP ${res.status}`);
-    }
-
-    const d = pageDrafts.get(p.pageFile);
-    if (d) d.dirty = false;
-    updatePendingBadge();
-
-    el.aiPreviewResult.innerHTML = `✅ تم فتح طلب المراجعة بنجاح (PR #${data.prNumber})!<br><a href="${escapeHtml(data.prUrl)}" target="_blank" rel="noopener noreferrer">افتح الـ Pull Request على GitHub للموافقة النهائية ←</a>`;
-    el.aiPreviewResult.hidden = false;
-  } catch (err) {
-    el.aiPreviewError.textContent = err?.message || "فشل فتح Pull Request.";
-    el.aiPreviewError.hidden = false;
-  } finally {
-    el.aiConfirmOpenPrBtn.disabled = !el.aiPreviewConfirmCheckbox.checked;
-    el.aiConfirmOpenPrBtn.textContent = "✅ تأكيد وفتح Pull Request";
   }
 }
 
@@ -1681,37 +1622,7 @@ function wireEvents() {
     el.aiModeMinimalBtn.classList.remove("is-active");
   });
   el.copyAndOpenGeminiBtn.addEventListener("click", copyAndOpenGeminiCanvas);
-  el.previewGeminiImportBtn.addEventListener("click", previewGeminiImportedHtml);
-
-  // AI Preview Modal
-  const closePreview = () => {
-    el.aiPreviewModal.hidden = true;
-  };
-  el.closeAiPreviewBtn.addEventListener("click", closePreview);
-  el.aiCancelPreviewBtn.addEventListener("click", closePreview);
-  el.aiPreviewOpenTabBtn.addEventListener("click", () => {
-    if (pendingAiPreview?.previewHtml) {
-      openPreviewHtmlInNewTab(pendingAiPreview.previewHtml);
-    }
-  });
-  el.aiPreviewDesktopBtn.addEventListener("click", () => {
-    el.aiPreviewFrame.classList.remove("is-mobile");
-    el.aiPreviewDesktopBtn.classList.add("is-active");
-    el.aiPreviewMobileBtn.classList.remove("is-active");
-  });
-  el.aiPreviewMobileBtn.addEventListener("click", () => {
-    el.aiPreviewFrame.classList.add("is-mobile");
-    el.aiPreviewMobileBtn.classList.add("is-active");
-    el.aiPreviewDesktopBtn.classList.remove("is-active");
-  });
-  el.aiPreviewConfirmCheckbox.addEventListener("change", () => {
-    el.aiConfirmOpenPrBtn.disabled = !el.aiPreviewConfirmCheckbox.checked;
-  });
-  el.aiApplyCanvasOnlyBtn.addEventListener("click", () => {
-    applyPendingAiToCanvas();
-    el.aiPreviewModal.hidden = true;
-  });
-  el.aiConfirmOpenPrBtn.addEventListener("click", confirmAndOpenAiPr);
+  el.previewGeminiImportBtn.addEventListener("click", applyGeminiImportedHtmlToSamePage);
 
   // Manual PR Modal
   el.submitPrBtn.addEventListener("click", openSubmitPrModal);
